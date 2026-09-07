@@ -1,30 +1,18 @@
 import Link from "next/link";
-import { BarChart3, Bot, Boxes, ClipboardList, Facebook, FileQuestion, FileText, Megaphone, MessageCircle, MessageSquareText, Settings, SlidersHorizontal, UsersRound } from "lucide-react";
+import { Bot, Facebook } from "lucide-react";
 
 const nav = [
-  { href: "/dashboard", label: "Tổng quan", icon: BarChart3 },
-  { href: "/inbox", label: "Inbox", icon: MessageSquareText },
-  { href: "/campaigns", label: "Campaign", icon: Megaphone },
-  { href: "/customers", label: "Khách hàng", icon: UsersRound },
-  { href: "/orders", label: "Đơn hàng", icon: ClipboardList },
-  { href: "/comments", label: "Bình luận", icon: MessageCircle },
-  { href: "/products", label: "Sản phẩm", icon: Boxes },
   { href: "/facebook-pages", label: "Facebook Pages", icon: Facebook },
-  { href: "/automation", label: "Automation", icon: SlidersHorizontal },
-  { href: "/ai", label: "AI", icon: Bot },
-  { href: "/help", label: "Hướng dẫn", icon: FileQuestion },
-  { href: "/logs", label: "Nhật ký", icon: FileText },
-  { href: "/settings", label: "Cài đặt", icon: Settings },
-  { href: "/", label: "Chat thử", icon: MessageSquareText }
+  { href: "/ai", label: "Gemini API", icon: Bot }
 ];
 
 export function AppShell({ children, title, subtitle }: { children: React.ReactNode; title: string; subtitle?: string }) {
   return (
-    <main className="min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
+    <main className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
       <aside className="border-b border-line bg-white lg:min-h-screen lg:border-b-0 lg:border-r">
         <div className="px-5 py-5">
-          <div className="text-lg font-bold text-ink">SalesBot AI</div>
-          <div className="text-sm text-muted">Facebook sales console</div>
+          <div className="text-lg font-bold text-ink">PageBot Gemini</div>
+          <div className="text-sm text-muted">Tự động trả lời Messenger</div>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1">
           {nav.map((item) => {
