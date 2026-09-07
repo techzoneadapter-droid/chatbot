@@ -60,31 +60,12 @@ type PageAIConfigSource = Pick<FacebookPage, "ai_provider" | "ai_model" | "ai_fa
 
 export function resolvePageAIConfig(page?: Partial<PageAIConfigSource> | null): PageAIConfig {
   const config = getAIConfig();
-  const requested = page?.ai_provider === "gemini" || page?.ai_provider === "openai" ? page.ai_provider : null;
-  const provider: AIProviderName = requested ?? (config.openaiApiKey ? "openai" : "gemini");
+  const provider: AIProviderName = "gemini";
   const requestedModel = page?.ai_model?.trim();
-  const model = isSupportedAIModel(provider, requestedModel) ? requestedModel! : provider === "openai" ? config.defaultOpenAIModel : config.defaultGeminiModel;
-  const fallbackProvider = page?.ai_fallback_provider && page.ai_fallback_provider !== provider ? page.ai_fallback_provider : provider === "openai" ? "gemini" : "openai";
-  return {
-    provider,
-    model,
-    fallbackProvider,
-    fallbackEnabled: Boolean(page?.ai_provider_fallback_enabled)
-  };
+  const model = isSupportedAIModel(provider, requestedModel) ? requestedModel! : config.defaultGeminiModel;
+  return { provider, model, fallbackProvider: null, fallbackEnabled: false };
 }
 
 export async function resolvePageAIConfigAsync(page?: Partial<PageAIConfigSource> | null): Promise<PageAIConfig> {
-  const config = getAIConfig();
-  const status = await getProviderStatusAsync();
-  const requested = page?.ai_provider === "gemini" || page?.ai_provider === "openai" ? page.ai_provider : null;
-  const provider: AIProviderName = requested ?? (status.openai ? "openai" : "gemini");
-  const requestedModel = page?.ai_model?.trim();
-  const model = isSupportedAIModel(provider, requestedModel) ? requestedModel! : provider === "openai" ? config.defaultOpenAIModel : config.defaultGeminiModel;
-  const fallbackProvider = page?.ai_fallback_provider && page.ai_fallback_provider !== provider ? page.ai_fallback_provider : provider === "openai" ? "gemini" : "openai";
-  return {
-    provider,
-    model,
-    fallbackProvider,
-    fallbackEnabled: Boolean(page?.ai_provider_fallback_enabled)
-  };
+  return resolvePageAIConfig(page);
 }
