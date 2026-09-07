@@ -57,16 +57,6 @@ export async function POST(request: Request) {
     if (logged.duplicate) continue;
 
     try {
-      const page = await getFacebookPage(event.pageId);
-      if (!page?.page_access_token) {
-        await markSkipped(event.eventKey, "page_not_connected_or_missing_token");
-        continue;
-      }
-      if (!page.connected || !page.automation_enabled || !page.auto_reply_messenger) {
-        await markSkipped(event.eventKey, "bot_disabled_for_page");
-        continue;
-      }
-
       if (event.mid) {
         const existing = await repository.getMessageByFacebookId(event.mid);
         if (existing) {
@@ -81,6 +71,16 @@ export async function POST(request: Request) {
         mid: event.mid,
         createdTime: event.timestamp ? new Date(event.timestamp).toISOString() : undefined
       });
+
+      const page = await getFacebookPage(event.pageId);
+      if (!page?.page_access_token) {
+        await markSkipped(event.eventKey, "page_not_connected_or_missing_token");
+        continue;
+      }
+      if (!page.connected || !page.automation_enabled || !page.auto_reply_messenger) {
+        await markSkipped(event.eventKey, "bot_disabled_for_page");
+        continue;
+      }
 
       await upsertFacebookPage({
         ...page,
