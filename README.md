@@ -1,15 +1,17 @@
-# AI Paint Sales Chatbot
+# PageBot Gemini
 
-Professional MVP for a Vietnamese paint-company sales chatbot.
+Simple Facebook Messenger chatbot for multiple Pages, powered by Gemini.
 
-## What Works
+## Core flow
 
-- Next.js app router with TypeScript and Tailwind CSS.
-- Local chat simulator at `/` with memory, intent detection, lead score, product recommendations, phone capture, and reset.
-- Admin pages for dashboard, conversations, leads, products, and settings.
-- Facebook Messenger webhook verification and message handling at `/api/webhook`.
-- Supabase-ready schema in `supabase/migrations`.
-- OpenAI integration when `OPENAI_API_KEY` is present; local rule-based sales engine when it is not.
+- Connect one or more Facebook Pages.
+- Store product information, prices, FAQ, and optional instructions separately for each Page.
+- Receive Messenger messages through `/api/webhook` (also available at `/api/facebook/webhook`).
+- Resolve the correct Page and conversation.
+- Send only that Page's knowledge plus recent conversation history to Gemini.
+- Send Gemini's answer back to the customer through Messenger.
+
+The Messenger path is intentionally page-scoped and does not use the old sales-engine/product recommendation flow.
 
 ## Setup
 
@@ -18,19 +20,21 @@ npm install
 npm run dev
 ```
 
-Copy `.env.example` to `.env.local` and fill credentials when available.
+Copy `.env.example` to `.env.local` and configure the required services.
 
-## Supabase
+## Required services
 
-Run `supabase/migrations/202608160001_initial_schema.sql`, then optionally run `scripts/seed-demo.sql`.
+- Supabase for persistent Page/conversation/message storage.
+- Gemini API (`GEMINI_API_KEY`, or encrypted provider settings in the app).
+- Meta/Facebook App credentials for Page OAuth and Messenger webhook handling.
+- `APP_URL` / `NEXT_PUBLIC_APP_URL` set to the deployed HTTPS origin.
 
-## Facebook Webhook
+## Facebook webhook
 
-- Verification endpoint: `GET /api/webhook`
-- Message endpoint: `POST /api/webhook`
-- Required environment variables:
-  - `FACEBOOK_PAGE_ID`
-  - `FACEBOOK_PAGE_ACCESS_TOKEN`
-  - `FACEBOOK_VERIFY_TOKEN`
+- Verification: `GET /api/webhook`
+- Messages: `POST /api/webhook`
+- Page subscription fields: `messages,messaging_postbacks`
 
-Without Facebook credentials, webhook send runs in development mode and logs the response.
+## Production
+
+Production is deployed from the `main` branch. Any commit to `main` should trigger the connected Vercel project deployment.
