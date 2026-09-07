@@ -46,7 +46,7 @@ export function GeminiSettings() {
     const response = await fetch("/api/ai/providers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "gemini", model: "gemini-flash-latest" })
+      body: JSON.stringify({ provider: "gemini", model: "gemini-3.8-flash" })
     });
     const data = await response.json().catch(() => ({}));
     setWorking(false);
@@ -68,7 +68,7 @@ export function GeminiSettings() {
         {!storeReady ? <p className="mt-2 text-xs text-muted">Để lưu API key trực tiếp trên web, server cần cấu hình APP_ENCRYPTION_KEY và Supabase. Nếu chưa có, bạn vẫn có thể đặt GEMINI_API_KEY trong biến môi trường khi deploy.</p> : null}
         <div className="mt-4 flex flex-wrap gap-2">
           <button disabled={working || !apiKey.trim()} onClick={() => void save()} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Lưu API key</button>
-          <button disabled={working || !configured} onClick={() => void test()} className="rounded-md border border-line px-4 py-2 text-sm disabled:opacity-50">Kiểm tra Gemini</button>
+          <button disabled={working || !configured} onClick={() => void test()} className="rounded-md border border-line px-4 py-2 text-sm disabled:opacity-50">Kiểm tra Gemini 3.8 Flash</button>
         </div>
         {message ? <div className="mt-3 rounded-md border border-line bg-white px-3 py-2 text-sm">{message}</div> : null}
       </section>
