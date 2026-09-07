@@ -1,0 +1,53 @@
+name: Production Smoke
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Wait for Vercel production deployment
+        run: sleep 60
+
+      - name: Check Facebook diagnostics
+        env:
+          BASE_URL: https://chatbot-one-jet-76.vercel.app
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 \
+            "$BASE_URL/api/facebook/diagnostics" -o diagnostics.json
+          python3 - <<'PY'
+          import json
+          with open('diagnostics.json', encoding='utf-8') as f:
+              data = json.load(f)
+          print(json.dumps(data, ensure_ascii=False, indent=2))
+          assert data.get('callback_url'), 'callback_url is missing'
+          assert isinstance(data.get('diagnostics'), list), 'diagnostics must be a list'
+          PY
+
+      - name: Check Gemini connection
+        env:
+          BASE_URL: https://chatbot-one-jet-76.vercel.app
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --retry 3 --retry-all-errors --retry-delay 5 \
+            -o gemini.json -w "%{http_code}" \
+            -X POST "$BASE_URL/api/ai/providers" \
+            -H 'content-type: application/json' \
+            --data '{"provider":"gemini","model":"gemini-3.8-flash"}')
+          cat gemini.json
+          echo
+          echo "HTTP $code"
+          test "$code" = "200"
+          python3 - <<'PY'
+          import json
+          with open('gemini.json', encoding='utf-8') as f:
+              data = json.load(f)
+          assert data.get('ok') is True, data
+          assert data.get('provider') == 'gemini', data
+          print(f"Gemini OK: model={data.get('model')} latencyMs={data.get('latencyMs')}")
+          PY
