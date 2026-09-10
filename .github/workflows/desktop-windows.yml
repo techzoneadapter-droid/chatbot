@@ -1,0 +1,43 @@
+name: Desktop Windows Build
+
+on:
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-windows.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package.json
+      - name: Install dependencies
+        run: npm install
+      - name: Check JavaScript
+        run: npm run check
+      - name: Build NSIS installer
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: PageBot-Desktop-Windows
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+          retention-days: 7
