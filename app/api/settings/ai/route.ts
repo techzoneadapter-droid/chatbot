@@ -11,7 +11,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as { provider?: AIProviderName; apiKey?: string };
-  if (body.provider !== "openai" && body.provider !== "gemini") {
+  if (body.provider !== "openai" && body.provider !== "gemini" && body.provider !== "meta") {
     return NextResponse.json({ error: "Nhà cung cấp AI không hợp lệ" }, { status: 400 });
   }
   const apiKey = body.apiKey?.trim();
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   const provider = new URL(request.url).searchParams.get("provider");
-  if (provider !== "openai" && provider !== "gemini") {
+  if (provider !== "openai" && provider !== "gemini" && provider !== "meta") {
     return NextResponse.json({ error: "Nhà cung cấp AI không hợp lệ" }, { status: 400 });
   }
 
