@@ -5,6 +5,9 @@ import { Facebook, Loader2, Save, Settings2, Unplug } from "lucide-react";
 import type { FacebookPage } from "@/lib/types";
 
 type OAuthPage = { id: string; name: string };
+type BotProvider = "gemini" | "meta";
+
+const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-flash-latest"];
 
 export function SimplePageBotManager() {
   const [pages, setPages] = useState<FacebookPage[]>([]);
@@ -64,9 +67,15 @@ export function SimplePageBotManager() {
   }
 
   async function savePage(page: FacebookPage) {
+    const provider: BotProvider = page.ai_provider === "meta" ? "meta" : "gemini";
+    if (provider === "meta" && !page.ai_model?.trim()) {
+      setMessage("Hãy nhập Model ID của Meta Model API cho Page này.");
+      return;
+    }
+
     setWorking(true);
     setMessage(null);
-    const response = await fetch("/api/facebook/pages", {
+    const response = await fetch("/api/facebook/page-ai", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -75,10 +84,8 @@ export function SimplePageBotManager() {
         automation_enabled: page.automation_enabled,
         auto_reply_messenger: page.automation_enabled,
         ai_sales_mode: page.automation_enabled,
-        auto_handoff: false,
-        ai_provider: "gemini",
-        ai_model: page.ai_model || "gemini-flash-latest",
-        ai_provider_fallback_enabled: false,
+        ai_provider: provider,
+        ai_model: page.ai_model || (provider === "gemini" ? "gemini-3.8-flash" : ""),
         ai_business_name: page.ai_business_name ?? page.page_name,
         ai_system_prompt: page.ai_system_prompt ?? "",
         ai_product_context: page.ai_product_context ?? "",
@@ -92,7 +99,7 @@ export function SimplePageBotManager() {
       return;
     }
     setEditing(null);
-    setMessage("Đã lưu dữ liệu cho Page.");
+    setMessage(`Đã lưu Page với ${provider === "meta" ? "Meta Model API" : "Gemini"}.`);
     await loadPages();
   }
 
@@ -109,13 +116,33 @@ export function SimplePageBotManager() {
     await loadPages();
   }
 
+  function startEditing(page: FacebookPage) {
+    const provider: BotProvider = page.ai_provider === "meta" ? "meta" : "gemini";
+    setEditing({
+      ...page,
+      ai_provider: provider,
+      ai_model: provider === "meta" ? page.ai_model ?? "" : GEMINI_MODELS.includes(page.ai_model ?? "") ? page.ai_model : "gemini-3.8-flash"
+    });
+  }
+
+  function changeProvider(provider: BotProvider) {
+    if (!editing) return;
+    setEditing({
+      ...editing,
+      ai_provider: provider,
+      ai_model: provider === "gemini"
+        ? GEMINI_MODELS.includes(editing.ai_model ?? "") ? editing.ai_model : "gemini-3.8-flash"
+        : (editing.ai_model?.startsWith("gemini-") ? "" : editing.ai_model ?? "")
+    });
+  }
+
   return (
     <div className="space-y-5">
       <section className="panel rounded-lg p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-semibold">Kết nối Facebook Page</h2>
-            <p className="mt-1 text-sm text-muted">Có thể kết nối nhiều Page. Mỗi Page dùng bộ thông tin sản phẩm và giá riêng.</p>
+            <p className="mt-1 text-sm text-muted">Có thể kết nối nhiều Page. Mỗi Page có dữ liệu riêng và có thể chọn Gemini hoặc Meta Model API.</p>
           </div>
           <a href="/api/facebook/oauth/start" className="inline-flex items-center gap-2 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white">
             <Facebook className="h-4 w-4" /> Kết nối Page
@@ -159,13 +186,14 @@ export function SimplePageBotManager() {
                   <div>
                     <div className="font-semibold">{page.page_name}</div>
                     <div className="mt-1 text-xs text-muted">Page ID: {page.page_id}</div>
+                    <div className="mt-1 text-xs text-muted">AI: {page.ai_provider === "meta" ? "Meta Model API" : "Gemini"}{page.ai_model ? ` · ${page.ai_model}` : ""}</div>
                   </div>
                   <span className={page.automation_enabled ? "rounded-full bg-green-50 px-2 py-1 text-xs text-green-700" : "rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600"}>
                     {page.automation_enabled ? "Bot đang bật" : "Bot đang tắt"}
                   </span>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <button onClick={() => setEditing({ ...page, ai_provider: "gemini", ai_model: page.ai_model || "gemini-flash-latest" })} className="inline-flex items-center gap-2 rounded-md border border-line px-3 py-2 text-sm">
+                  <button onClick={() => startEditing(page)} className="inline-flex items-center gap-2 rounded-md border border-line px-3 py-2 text-sm">
                     <Settings2 className="h-4 w-4" /> Cấu hình bot
                   </button>
                   <button disabled={working} onClick={() => void removePage(page.page_id)} className="inline-flex items-center gap-2 rounded-md border border-line px-3 py-2 text-sm text-red-600 disabled:opacity-50">
@@ -183,13 +211,35 @@ export function SimplePageBotManager() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="font-semibold">Cấu hình: {editing.page_name}</h2>
-              <p className="mt-1 text-sm text-muted">Gemini chỉ dùng dữ liệu bạn nhập cho Page này để trả lời khách.</p>
+              <p className="mt-1 text-sm text-muted">AI chỉ dùng dữ liệu bạn nhập cho Page này để trả lời khách.</p>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={editing.automation_enabled} onChange={(event) => setEditing({ ...editing, automation_enabled: event.target.checked })} />
               Bật tự động trả lời
             </label>
           </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">Nhà cung cấp AI</span>
+              <select value={editing.ai_provider === "meta" ? "meta" : "gemini"} onChange={(event) => changeProvider(event.target.value as BotProvider)} className="w-full rounded-md border border-line px-3 py-2">
+                <option value="gemini">Gemini</option>
+                <option value="meta">Meta Model API</option>
+              </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">Model</span>
+              {editing.ai_provider === "meta" ? (
+                <input value={editing.ai_model ?? ""} onChange={(event) => setEditing({ ...editing, ai_model: event.target.value })} className="w-full rounded-md border border-line px-3 py-2" placeholder="Model ID từ Meta Model API dashboard" />
+              ) : (
+                <select value={editing.ai_model ?? "gemini-3.8-flash"} onChange={(event) => setEditing({ ...editing, ai_model: event.target.value })} className="w-full rounded-md border border-line px-3 py-2">
+                  {GEMINI_MODELS.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+              )}
+            </label>
+          </div>
+          {editing.ai_provider === "meta" ? <p className="mt-2 text-xs text-muted">Dùng đúng Model ID mà tài khoản Meta Model API của bạn được phép truy cập.</p> : null}
 
           <label className="mt-4 block text-sm">
             <span className="mb-1 block font-medium">Tên cửa hàng / thương hiệu</span>
@@ -202,7 +252,7 @@ export function SimplePageBotManager() {
               value={editing.ai_product_context ?? ""}
               onChange={(event) => setEditing({ ...editing, ai_product_context: event.target.value })}
               className="min-h-64 w-full rounded-md border border-line px-3 py-2"
-              placeholder={"Ví dụ:\nSơn chống thấm TNANO CT01\n- Giá 18L: 2.500.000đ\n- Giá 5L: 850.000đ\n- Công dụng: chống thấm tường ngoài trời\n- Định mức: 5-7m²/kg/2 lớp\n\nSơn nội thất TNANO N01\n- Giá 18L: ..."}
+              placeholder={"Ví dụ:\nSơn chống thấm TNANO CT01\n- Giá 18L: 2.500.000đ\n- Giá 5L: 850.000đ\n- Công dụng: chống thấm tường ngoài trời\n\nSơn nội thất TNANO N01\n- Giá 18L: ..."}
             />
           </label>
 
