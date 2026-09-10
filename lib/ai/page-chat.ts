@@ -1,10 +1,11 @@
 import { getProviderApiKey } from "@/lib/ai/secrets";
 import { defaultAIModel, isSupportedAIModel } from "@/lib/ai/models";
+import { MetaProvider } from "@/lib/ai/meta-provider";
 import type { FacebookPage, Message } from "@/lib/types";
 
 type PageChatContext = Pick<
   FacebookPage,
-  "page_id" | "page_name" | "ai_model" | "ai_business_name" | "ai_system_prompt" | "ai_product_context" | "ai_faq_context"
+  "page_id" | "page_name" | "ai_provider" | "ai_model" | "ai_business_name" | "ai_system_prompt" | "ai_product_context" | "ai_faq_context"
 >;
 
 export async function generatePageChatReply(input: {
@@ -12,6 +13,17 @@ export async function generatePageChatReply(input: {
   history: Message[];
   customerMessage: string;
 }) {
+  const system = buildSystemInstruction(input.page);
+  const prompt = buildConversationPrompt(input.history, input.customerMessage);
+
+  if (String(input.page.ai_provider ?? "") === "meta") {
+    const model = input.page.ai_model?.trim() || process.env.META_MODEL?.trim();
+    if (!model) throw new Error("META_MODEL_NOT_CONFIGURED");
+    const reply = await new MetaProvider({ throwErrors: true }).generatePageReply(system, prompt, model);
+    if (!reply) throw new Error("META_EMPTY_REPLY");
+    return reply;
+  }
+
   const apiKey = await getProviderApiKey("gemini");
   if (!apiKey) throw new Error("GEMINI_API_KEY_NOT_CONFIGURED");
 
@@ -35,12 +47,12 @@ export async function generatePageChatReply(input: {
         signal: controller.signal,
         body: JSON.stringify({
           systemInstruction: {
-            parts: [{ text: buildSystemInstruction(input.page) }]
+            parts: [{ text: system }]
           },
           contents: [
             {
               role: "user",
-              parts: [{ text: buildConversationPrompt(input.history, input.customerMessage) }]
+              parts: [{ text: prompt }]
             }
           ],
           generationConfig: {
