@@ -1,7 +1,7 @@
 export type Platform = "local" | "facebook";
 export type LeadSource = "local_chat" | "facebook_messenger" | "facebook_comment" | "website" | "other";
 export type SenderType = "customer" | "ai" | "staff" | "system";
-export type AIProviderName = "openai" | "gemini";
+export type AIProviderName = "openai" | "gemini" | "meta";
 export type AIConfidenceStatus = "confident" | "uncertain" | "human_required";
 export type LeadStatus = "NEW" | "CONTACTED" | "QUALIFIED" | "CONVERTED" | "LOST";
 export type CommentHideMode = "off" | "phone_only" | "hide_all" | "blocked_keywords";
@@ -338,8 +338,11 @@ export interface Order {
   address: string;
   status: "DRAFT" | "PENDING_CONFIRMATION" | "CONFIRMED" | "PROCESSING" | "SHIPPED" | "DONE" | "CANCELLED";
   source: LeadSource;
-  total_amount?: number | null;
   notes?: string | null;
+  subtotal: number;
+  discount_amount: number;
+  shipping_fee: number;
+  total: number;
   created_at: string;
   updated_at: string;
 }
@@ -349,35 +352,21 @@ export interface OrderItem {
   order_id: string;
   product_id?: string | null;
   product_name: string;
-  variant?: string | null;
   quantity: number;
-  unit_price?: number | null;
-  amount?: number | null;
+  unit_price: number;
+  line_total: number;
   created_at: string;
 }
 
 export interface AutomationSettings {
-  messenger: {
-    autoReply: boolean;
-    aiSalesMode: boolean;
-    autoHandoff: boolean;
-  };
-  comment: {
-    autoLike: boolean;
-    autoReply: boolean;
-    autoHidePhone: boolean;
-    autoHideBlacklist: boolean;
-  };
-  blacklistKeywords: string[];
-  greeting: string;
-  fallbackReply: string;
-  commentReplyStyle: string;
-  maxConsecutiveBotReplies: number;
-  businessHours: string;
-  handoffRules: string[];
-  brandKnowledge: string;
-  faq: string;
-  salesPolicies: string;
+  facebook_auto_reply: boolean;
+  auto_like_comments: boolean;
+  auto_reply_comments: boolean;
+  auto_hide_comments: boolean;
+  hide_phone_comments: boolean;
+  hide_keyword_comments: boolean;
+  blocked_keywords: string[];
+  default_ai_provider: AIProviderName;
 }
 
 export interface WebhookEventLog {
@@ -389,95 +378,4 @@ export interface WebhookEventLog {
   processed: boolean;
   processing_error?: string | null;
   created_at: string;
-}
-
-export type CampaignStatus = "draft" | "running" | "paused" | "stopped" | "completed";
-export type CampaignRecipientStatus = "pending" | "sending" | "sent" | "failed" | "skipped";
-export type MessengerEligibility = "eligible" | "not_eligible" | "unknown";
-
-export interface CampaignSegment {
-  pageIds?: string[];
-  missingPhone?: boolean;
-  hasPhone?: boolean;
-  missingAddress?: boolean;
-  hasAddress?: boolean;
-  missingProductInterest?: boolean;
-  hasProductInterest?: boolean;
-  newLead?: boolean;
-  potentialLead?: boolean;
-  purchased?: boolean;
-  notPurchased?: boolean;
-  noResponse?: boolean;
-  aiHandling?: boolean;
-  humanHandling?: boolean;
-  notFollowedUp?: boolean;
-  lastMessageWithinDays?: number | null;
-  leadCreatedWithinDays?: number | null;
-  inactiveDays?: number | null;
-  cooldownDays?: number | null;
-  excludeHumanTakeover?: boolean;
-}
-
-export interface CampaignPreviewRecipient {
-  id: string;
-  conversation_id: string;
-  page_id: string | null;
-  page_name: string | null;
-  customer_psid: string | null;
-  customer_name: string | null;
-  phone: string | null;
-  address: string | null;
-  status: Conversation["status"];
-  ai_enabled: boolean;
-  human_takeover: boolean | null;
-  last_message_at: string | null;
-  lead_created_at: string | null;
-  product_interest: string | null;
-  eligibility: MessengerEligibility;
-  eligibility_reason: string;
-  selected: boolean;
-}
-
-export interface Campaign {
-  id: string;
-  name: string;
-  page_scope: string;
-  segment_json: CampaignSegment;
-  message_template: string;
-  status: CampaignStatus;
-  total_recipients: number;
-  eligible_count: number;
-  skipped_count: number;
-  sent_count: number;
-  failed_count: number;
-  created_at: string;
-  started_at?: string | null;
-  completed_at?: string | null;
-  updated_at: string;
-}
-
-export interface CampaignRecipient {
-  id: string;
-  campaign_id: string;
-  page_id?: string | null;
-  conversation_id?: string | null;
-  customer_psid?: string | null;
-  eligibility: MessengerEligibility;
-  eligibility_reason?: string | null;
-  status: CampaignRecipientStatus;
-  message_text?: string | null;
-  facebook_message_id?: string | null;
-  error?: string | null;
-  scheduled_at?: string | null;
-  sent_at?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CampaignTemplate {
-  id: string;
-  name: string;
-  body: string;
-  created_at: string;
-  updated_at: string;
 }
