@@ -28,5 +28,5 @@ jobs:
           cache-dependency-path: desktop/package.json
       - name: Install dependencies
         run: npm install
-      - name: Check JavaScript
-        run: npm run check
+      - name: Verify desktop dev build
+        run: npm run verify

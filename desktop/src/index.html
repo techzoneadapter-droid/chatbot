@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PageBot Desktop</title>
+  <title>PageBot Desktop DEV</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -14,7 +14,7 @@
         <div class="brand-mark">PB</div>
         <div>
           <strong>PageBot Desktop</strong>
-          <span>Facebook + AI</span>
+          <span>DEV · Facebook + AI</span>
         </div>
       </div>
       <button id="new-profile" class="primary full">+ Tạo profile trình duyệt</button>
@@ -75,6 +75,7 @@
           </label>
           <div class="button-row">
             <button id="save-api-key" class="secondary">Lưu key</button>
+            <button id="test-ai" class="ghost">Kiểm tra AI</button>
             <button id="clear-api-key" class="ghost danger">Xóa key</button>
           </div>
         </section>
@@ -102,6 +103,7 @@
             </div>
             <button id="inspect-chat" class="icon-button" title="Kiểm tra đọc hội thoại">◎</button>
           </div>
+          <div id="chat-diagnostics" class="diagnostics muted">Chưa kiểm tra hội thoại.</div>
           <button id="suggest-reply" class="primary full">AI soạn câu trả lời</button>
           <label class="output-label">
             <span>Câu trả lời</span>
@@ -121,7 +123,7 @@
         </section>
 
         <div class="safety-note">
-          Auto Chat chỉ chạy trên profile đang mở, có cooldown và giới hạn tốc độ. Không có chức năng gửi hàng loạt hoặc né cơ chế của Facebook.
+          Auto Chat chỉ chạy trên Business Suite Inbox hoặc Messenger của profile đang mở. Khi vừa bật, app chỉ lấy hội thoại hiện tại làm mốc và không tự trả lời lại tin cũ.
         </div>
       </div>
     </aside>
