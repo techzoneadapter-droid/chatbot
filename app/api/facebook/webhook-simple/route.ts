@@ -82,6 +82,8 @@ export async function POST(request: Request) {
         continue;
       }
 
+      const aiProvider = String(page.ai_provider ?? "") === "meta" ? "meta" : "gemini";
+
       await upsertFacebookPage({
         ...page,
         last_webhook_at: new Date().toISOString(),
@@ -108,7 +110,7 @@ export async function POST(request: Request) {
       await repository.addMessage(conversation.id, "ai", reply, {
         pageId: event.pageId,
         messenger_result: messengerResult,
-        provider: "gemini",
+        provider: aiProvider,
         model: page.ai_model ?? null
       });
 
@@ -120,7 +122,7 @@ export async function POST(request: Request) {
           sender_id: event.senderId,
           message_id: event.mid ?? null,
           replied: true,
-          provider: "gemini"
+          provider: aiProvider
         }
       });
       replied += 1;
