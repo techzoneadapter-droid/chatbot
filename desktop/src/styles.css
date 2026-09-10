@@ -120,7 +120,7 @@ input:focus, textarea:focus, select:focus { border-color: #596577; }
 textarea { resize: vertical; min-height: 64px; line-height: 1.45; font-size: 12px; }
 select, input { height: 35px; font-size: 12px; }
 .two-col { display: grid; grid-template-columns: 1fr 1.2fr; gap: 8px; }
-.button-row { display: flex; gap: 7px; margin-top: 9px; }
+.button-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
 button.primary, button.secondary, button.ghost {
   border-radius: 8px; padding: 8px 11px; font-size: 11.5px; font-weight: 750; border: 1px solid transparent;
 }
@@ -143,6 +143,21 @@ button.full { width: 100%; }
 .section-head small { display: block; margin-top: 2px; color: var(--muted); font-size: 9.5px; }
 .output-label { margin-top: 9px; }
 #reply-output { min-height: 92px; }
+.diagnostics {
+  margin: 0 0 9px;
+  padding: 8px 9px;
+  border: 1px solid #29313c;
+  border-radius: 9px;
+  background: #0e1116;
+  color: #aeb7c4;
+  font-size: 9.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.diagnostics div + div { margin-top: 2px; }
+.diagnostics.ok { border-color: rgba(59,209,130,.3); background: rgba(59,209,130,.045); }
+.diagnostics.warn { border-color: rgba(232,185,79,.28); background: rgba(232,185,79,.045); }
+.diagnostics.muted { color: #6f7886; }
 .activity-card { min-height: 120px; }
 .activity { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
 .log-item { display: grid; grid-template-columns: 48px 1fr; gap: 7px; border-top: 1px solid #202630; padding-top: 6px; }
