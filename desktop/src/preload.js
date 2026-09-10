@@ -21,7 +21,8 @@ contextBridge.exposeInMainWorld("pagebot", {
     send: (text) => ipcRenderer.invoke("chat:send", text)
   },
   ai: {
-    suggest: () => ipcRenderer.invoke("ai:suggest")
+    suggest: () => ipcRenderer.invoke("ai:suggest"),
+    test: () => ipcRenderer.invoke("ai:test")
   },
   secrets: {
     status: () => ipcRenderer.invoke("secrets:status"),
