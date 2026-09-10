@@ -21,6 +21,7 @@ export async function getProviderSecretStatus() {
   return {
     openai: Boolean(await getProviderApiKey("openai")),
     gemini: Boolean(await getProviderApiKey("gemini")),
+    meta: Boolean(await getProviderApiKey("meta")),
     encryptedStoreReady: canStoreEncryptedSecrets()
   };
 }
@@ -41,7 +42,9 @@ export async function getProviderApiKey(provider: AIProviderName) {
       }
     }
   }
-  return provider === "openai" ? process.env.OPENAI_API_KEY?.trim() || null : process.env.GEMINI_API_KEY?.trim() || null;
+  if (provider === "openai") return process.env.OPENAI_API_KEY?.trim() || null;
+  if (provider === "meta") return process.env.MODEL_API_KEY?.trim() || process.env.META_MODEL_API_KEY?.trim() || null;
+  return process.env.GEMINI_API_KEY?.trim() || null;
 }
 
 export async function saveProviderApiKey(provider: AIProviderName, apiKey: string) {
