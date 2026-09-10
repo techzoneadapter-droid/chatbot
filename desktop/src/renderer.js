@@ -2,7 +2,9 @@ const state = {
   profiles: [],
   activeProfile: null,
   lastSuggestion: "",
-  secretStatus: { gemini: false, meta: false, encryptionAvailable: false }
+  secretStatus: { gemini: false, meta: false, encryptionAvailable: false },
+  browserSupportedChat: false,
+  autoBusy: false
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -14,6 +16,11 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function errorText(error) {
+  const text = error?.message || String(error || "Lỗi không xác định");
+  return text.replace(/^Error invoking remote method '[^']+':\s*/i, "").replace(/^Error:\s*/i, "");
 }
 
 async function init() {
@@ -31,42 +38,67 @@ function bindStaticEvents() {
   $("#profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const profile = await window.pagebot.profiles.create({
-      name: form.get("name"),
-      startUrl: form.get("startUrl")
-    });
-    $("#profile-dialog").close();
-    event.currentTarget.reset();
-    await loadProfiles();
-    renderProfiles();
-    await openProfile(profile.id);
+    setBusy(true, "Đang tạo profile...");
+    try {
+      const profile = await window.pagebot.profiles.create({
+        name: form.get("name"),
+        startUrl: form.get("startUrl")
+      });
+      $("#profile-dialog").close();
+      event.currentTarget.reset();
+      await loadProfiles();
+      renderProfiles();
+      await openProfile(profile.id);
+    } catch (error) {
+      log(errorText(error), "error");
+    } finally {
+      setBusy(false);
+    }
   });
 
   $("#back").addEventListener("click", () => window.pagebot.browser.back());
   $("#forward").addEventListener("click", () => window.pagebot.browser.forward());
   $("#reload").addEventListener("click", () => window.pagebot.browser.reload());
   $("#home").addEventListener("click", () => window.pagebot.browser.home());
-  $("#url-form").addEventListener("submit", (event) => {
+  $("#url-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    window.pagebot.browser.navigate($("#url").value);
+    try {
+      await window.pagebot.browser.navigate($("#url").value);
+    } catch (error) {
+      log(errorText(error), "error");
+    }
   });
 
-  $("#save-profile").addEventListener("click", saveActiveProfile);
+  $("#save-profile").addEventListener("click", () => saveActiveProfile());
   $("#delete-profile").addEventListener("click", deleteActiveProfile);
   $("#ai-provider").addEventListener("change", updateModelPlaceholder);
   $("#save-api-key").addEventListener("click", saveApiKey);
+  $("#test-ai").addEventListener("click", testAi);
   $("#clear-api-key").addEventListener("click", clearApiKey);
   $("#suggest-reply").addEventListener("click", suggestReply);
   $("#send-reply").addEventListener("click", sendSuggestion);
   $("#inspect-chat").addEventListener("click", inspectChat);
-  $("#auto-reply").addEventListener("change", async () => {
-    if (!state.activeProfile) return;
-    state.activeProfile = await window.pagebot.profiles.update(state.activeProfile.id, { autoReply: $("#auto-reply").checked });
+  $("#auto-reply").addEventListener("change", toggleAutoReply);
+}
+
+async function toggleAutoReply() {
+  if (!state.activeProfile) return;
+  const checked = $("#auto-reply").checked;
+  if (checked && !state.browserSupportedChat) {
+    $("#auto-reply").checked = false;
+    log("Hãy mở Business Suite Inbox hoặc Messenger trước khi bật Auto Chat.", "warn");
+    return;
+  }
+  try {
+    state.activeProfile = await window.pagebot.profiles.update(state.activeProfile.id, { autoReply: checked });
     await loadProfiles();
     renderProfiles();
     renderAiPanel();
-    log($("#auto-reply").checked ? "Auto Chat đã bật cho profile đang mở." : "Auto Chat đã tắt.", "success");
-  });
+    log(checked ? "Auto Chat đã bật. Hội thoại hiện tại sẽ được lấy làm mốc, không trả lời lại tin cũ." : "Auto Chat đã tắt.", "success");
+  } catch (error) {
+    $("#auto-reply").checked = !checked;
+    log(errorText(error), "error");
+  }
 }
 
 async function loadProfiles() {
@@ -90,29 +122,36 @@ function renderProfiles() {
       ${auto}
       <span class="profile-info">
         <strong>${escapeHtml(profile.name)}</strong>
-        <small>${escapeHtml(profile.aiProvider === "meta" ? "Meta AI" : "Gemini")}</small>
+        <small>${escapeHtml(profile.aiProvider === "meta" ? "Meta AI" : "Gemini")}${profile.autoReply ? " · Auto" : ""}</small>
       </span>
     </button>`;
   }).join("");
 
   container.querySelectorAll(".profile-card").forEach((button) => {
-    button.addEventListener("click", () => openProfile(button.dataset.id));
+    button.addEventListener("click", () => {
+      if (button.dataset.id && button.dataset.id !== state.activeProfile?.id) void openProfile(button.dataset.id);
+    });
   });
 }
 
 async function openProfile(profileId) {
   setBusy(true, "Đang mở profile...");
   try {
-    state.activeProfile = await window.pagebot.profiles.open(profileId);
+    const opened = await window.pagebot.profiles.open(profileId);
+    if (!opened) throw new Error("Không mở được profile.");
+    state.activeProfile = opened;
     state.lastSuggestion = "";
+    state.autoBusy = false;
     renderProfiles();
     renderAiPanel();
     const browserState = await window.pagebot.browser.state();
-    $("#url").value = browserState.url || state.activeProfile.startUrl || "";
+    state.browserSupportedChat = Boolean(browserState.supportedChat);
+    $("#url").value = browserState.url || state.activeProfile.lastUrl || state.activeProfile.startUrl || "";
     $("#active-profile-name").textContent = state.activeProfile.name;
-    log(`Đã mở ${state.activeProfile.name}. Đăng nhập Facebook trong khung trình duyệt nếu cần.`, "success");
+    resetDiagnostics();
+    log(`Đã mở ${state.activeProfile.name}. Phiên đăng nhập Facebook của profile này được lưu riêng.`, "success");
   } catch (error) {
-    log(error.message || String(error), "error");
+    log(errorText(error), "error");
   } finally {
     setBusy(false);
   }
@@ -121,7 +160,7 @@ async function openProfile(profileId) {
 function renderAiPanel() {
   const profile = state.activeProfile;
   const disabled = !profile;
-  for (const id of ["ai-provider", "ai-model", "knowledge", "system-prompt", "auto-reply", "save-profile", "delete-profile", "suggest-reply", "inspect-chat"]) {
+  for (const id of ["ai-provider", "ai-model", "knowledge", "system-prompt", "auto-reply", "save-profile", "delete-profile", "suggest-reply", "inspect-chat", "test-ai"]) {
     $("#" + id).disabled = disabled;
   }
   if (!profile) {
@@ -134,6 +173,7 @@ function renderAiPanel() {
     $("#reply-output").value = "";
     $("#send-reply").disabled = true;
     updateApiStatus();
+    resetDiagnostics();
     return;
   }
   $("#active-profile-name").textContent = profile.name;
@@ -163,9 +203,10 @@ function updateApiStatus() {
   badge.className = `status-badge ${ok ? "ok" : "warn"}`;
 }
 
-async function saveActiveProfile() {
-  if (!state.activeProfile) return;
-  setBusy(true, "Đang lưu...");
+async function saveActiveProfile(options = {}) {
+  if (!state.activeProfile) return false;
+  const showBusy = options.showBusy !== false;
+  if (showBusy) setBusy(true, "Đang lưu...");
   try {
     const provider = $("#ai-provider").value;
     const model = $("#ai-model").value.trim();
@@ -180,11 +221,13 @@ async function saveActiveProfile() {
     await loadProfiles();
     renderProfiles();
     renderAiPanel();
-    log("Đã lưu cấu hình AI cho profile.", "success");
+    if (!options.quiet) log("Đã lưu cấu hình AI cho profile.", "success");
+    return true;
   } catch (error) {
-    log(error.message || String(error), "error");
+    log(errorText(error), "error");
+    return false;
   } finally {
-    setBusy(false);
+    if (showBusy) setBusy(false);
   }
 }
 
@@ -192,15 +235,23 @@ async function deleteActiveProfile() {
   if (!state.activeProfile) return;
   const name = state.activeProfile.name;
   if (!confirm(`Xóa profile “${name}”? Dữ liệu đăng nhập của profile này cũng sẽ bị xóa.`)) return;
-  await window.pagebot.profiles.delete(state.activeProfile.id);
-  state.activeProfile = null;
-  state.lastSuggestion = "";
-  await loadProfiles();
-  renderProfiles();
-  renderAiPanel();
-  $("#url").value = "";
-  log(`Đã xóa ${name}.`, "success");
-  if (state.profiles.length) await openProfile(state.profiles[0].id);
+  setBusy(true, "Đang xóa profile...");
+  try {
+    await window.pagebot.profiles.delete(state.activeProfile.id);
+    state.activeProfile = null;
+    state.lastSuggestion = "";
+    state.browserSupportedChat = false;
+    await loadProfiles();
+    renderProfiles();
+    renderAiPanel();
+    $("#url").value = "";
+    log(`Đã xóa ${name}.`, "success");
+    if (state.profiles.length) await openProfile(state.profiles[0].id);
+  } catch (error) {
+    log(errorText(error), "error");
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function saveApiKey() {
@@ -215,7 +266,24 @@ async function saveApiKey() {
     updateApiStatus();
     log(`Đã lưu ${provider === "meta" ? "Meta Model API" : "Gemini"} key bằng Windows secure storage.`, "success");
   } catch (error) {
-    log(error.message || String(error), "error");
+    log(errorText(error), "error");
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function testAi() {
+  if (!state.activeProfile) return;
+  const saved = await saveActiveProfile({ showBusy: false, quiet: true });
+  if (!saved) return;
+  const profileId = state.activeProfile.id;
+  setBusy(true, "Đang kiểm tra AI...");
+  try {
+    const result = await window.pagebot.ai.test();
+    if (state.activeProfile?.id !== profileId || result.profileId !== profileId) return;
+    log(`${result.provider === "meta" ? "Meta Model API" : "Gemini"} hoạt động · ${result.model} · ${result.latencyMs}ms.`, "success");
+  } catch (error) {
+    log(errorText(error), "error");
   } finally {
     setBusy(false);
   }
@@ -224,24 +292,35 @@ async function saveApiKey() {
 async function clearApiKey() {
   const provider = $("#ai-provider").value;
   if (!confirm("Xóa API key đã lưu cho provider này?")) return;
-  await window.pagebot.secrets.clear(provider);
-  await loadSecretStatus();
-  updateApiStatus();
-  log("Đã xóa API key.", "success");
+  try {
+    await window.pagebot.secrets.clear(provider);
+    await loadSecretStatus();
+    updateApiStatus();
+    log("Đã xóa API key.", "success");
+  } catch (error) {
+    log(errorText(error), "error");
+  }
 }
 
 async function suggestReply() {
   if (!state.activeProfile) return;
-  await saveActiveProfile();
+  const saved = await saveActiveProfile({ showBusy: false, quiet: true });
+  if (!saved) return;
+  const profileId = state.activeProfile.id;
   setBusy(true, "AI đang soạn...");
   try {
     const result = await window.pagebot.ai.suggest();
+    if (state.activeProfile?.id !== profileId || result.profileId !== profileId) {
+      log("Đã đổi profile trong lúc AI soạn nên kết quả cũ được bỏ qua.", "warn");
+      return;
+    }
     state.lastSuggestion = result.text || "";
     $("#reply-output").value = state.lastSuggestion;
     $("#send-reply").disabled = !state.lastSuggestion;
+    renderDiagnostics(result.snapshot);
     log(`AI đã đọc hội thoại “${result.snapshot?.title || "đang mở"}” và soạn câu trả lời.`, "success");
   } catch (error) {
-    log(error.message || String(error), "error");
+    log(errorText(error), "error");
   } finally {
     setBusy(false);
   }
@@ -249,17 +328,18 @@ async function suggestReply() {
 
 async function sendSuggestion() {
   const text = $("#reply-output").value.trim();
-  if (!text) return;
+  if (!text || !state.activeProfile) return;
+  const profileId = state.activeProfile.id;
   setBusy(true, "Đang gửi...");
   try {
-    const sent = await window.pagebot.chat.send(text);
-    if (!sent) throw new Error("Không tìm thấy ô chat để gửi.");
-    log("Đã gửi câu trả lời vào hội thoại đang mở.", "success");
+    const result = await window.pagebot.chat.send(text);
+    if (result.profileId !== profileId || state.activeProfile?.id !== profileId) throw new Error("Đã đổi profile nên thao tác gửi bị hủy.");
+    if (!result.ok) throw new Error(result.reason === "UNSUPPORTED_CHAT_URL" ? "Trang hiện tại không phải Business Suite Inbox/Messenger." : "Không tìm thấy ô chat hoặc nút gửi phù hợp.");
+    log(result.verified ? "Đã gửi và xác nhận tin nhắn xuất hiện trong hội thoại." : "Đã thực hiện thao tác gửi nhưng chưa xác nhận được bong bóng tin mới. Hãy nhìn màn hình kiểm tra.", result.verified ? "success" : "warn");
     state.lastSuggestion = "";
-    $("#reply-output").value = "";
     $("#send-reply").disabled = true;
   } catch (error) {
-    log(error.message || String(error), "error");
+    log(errorText(error), "error");
   } finally {
     setBusy(false);
   }
@@ -269,25 +349,67 @@ async function inspectChat() {
   setBusy(true, "Đang đọc hội thoại...");
   try {
     const snapshot = await window.pagebot.chat.snapshot();
-    if (!snapshot?.inputFound) throw new Error("Chưa tìm thấy ô nhập tin nhắn. Hãy mở một cuộc chat trong Facebook/Messenger.");
-    log(`Đọc được: ${snapshot.latestText || "chưa có tin nhắn"} · ${snapshot.incoming ? "có vẻ là tin khách" : "có vẻ là tin đã gửi"}`, snapshot.latestText ? "success" : "warn");
+    renderDiagnostics(snapshot);
+    if (!snapshot?.supportedChat) throw new Error("Trang hiện tại không phải Business Suite Inbox hoặc Messenger.");
+    if (!snapshot?.inputFound) throw new Error("Chưa tìm thấy ô nhập tin nhắn. Hãy mở một cuộc chat.");
+    const confidence = Math.round((snapshot.confidence || 0) * 100);
+    log(`Đọc được ${snapshot.messageCount || 0} dòng · tin cuối: ${snapshot.incoming ? "KHÁCH" : snapshot.latestDirection === "outgoing" ? "BẠN/PAGE" : "CHƯA RÕ"} · độ tin cậy ${confidence}%.`, snapshot.latestText ? "success" : "warn");
   } catch (error) {
-    log(error.message || String(error), "error");
+    log(errorText(error), "error");
   } finally {
     setBusy(false);
   }
+}
+
+function resetDiagnostics() {
+  const box = $("#chat-diagnostics");
+  if (!box) return;
+  box.className = "diagnostics muted";
+  box.textContent = "Chưa kiểm tra hội thoại.";
+}
+
+function renderDiagnostics(snapshot) {
+  const box = $("#chat-diagnostics");
+  if (!box) return;
+  if (!snapshot) {
+    resetDiagnostics();
+    return;
+  }
+  const confidence = Math.round((snapshot.confidence || 0) * 100);
+  const direction = snapshot.incoming ? "Khách" : snapshot.latestDirection === "outgoing" ? "Bạn/Page" : "Chưa rõ";
+  const latest = String(snapshot.latestText || "").slice(0, 150);
+  box.className = `diagnostics ${snapshot.supportedChat && snapshot.inputFound ? "ok" : "warn"}`;
+  box.innerHTML = [
+    `<div><b>Trang:</b> ${snapshot.supportedChat ? "Chat hỗ trợ" : "Không phải trang chat"}</div>`,
+    `<div><b>Ô nhập:</b> ${snapshot.inputFound ? "Có" : "Không"} · <b>Độ tin cậy:</b> ${confidence}%</div>`,
+    `<div><b>Tin cuối:</b> ${escapeHtml(direction)}${latest ? ` · ${escapeHtml(latest)}` : ""}</div>`,
+    `<div><b>Hội thoại:</b> ${escapeHtml(snapshot.title || snapshot.conversationKey || "Chưa rõ")}</div>`
+  ].join("");
 }
 
 function handleMainEvent(event) {
   if (!event) return;
   if (event.type === "browser-state") {
     if (event.payload?.url) $("#url").value = event.payload.url;
+    if (event.payload?.supportedChat !== undefined) {
+      state.browserSupportedChat = Boolean(event.payload.supportedChat);
+      if (!state.browserSupportedChat) resetDiagnostics();
+    }
     if (event.payload?.loading !== undefined) $("#browser-loading").classList.toggle("visible", Boolean(event.payload.loading));
   }
+  if (event.type === "auto-state") {
+    state.autoBusy = Boolean(event.payload?.busy);
+  }
   if (event.type === "ai-reply" && event.payload?.text) {
-    state.lastSuggestion = event.payload.text;
+    if (event.payload.profileId && event.payload.profileId !== state.activeProfile?.id) return;
     $("#reply-output").value = event.payload.text;
-    $("#send-reply").disabled = false;
+    if (event.payload.automatic) {
+      state.lastSuggestion = "";
+      $("#send-reply").disabled = true;
+    } else {
+      state.lastSuggestion = event.payload.text;
+      $("#send-reply").disabled = false;
+    }
   }
   if (event.type === "active-profile" && event.payload) {
     state.activeProfile = event.payload;
@@ -305,7 +427,7 @@ function log(text, level = "info") {
   item.className = `log-item ${level}`;
   item.innerHTML = `<span>${escapeHtml(time)}</span><p>${escapeHtml(text)}</p>`;
   container.prepend(item);
-  while (container.children.length > 40) container.lastElementChild.remove();
+  while (container.children.length > 50) container.lastElementChild.remove();
 }
 
 function setBusy(active, text = "") {
@@ -314,5 +436,5 @@ function setBusy(active, text = "") {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  init().catch((error) => log(error.message || String(error), "error"));
+  init().catch((error) => log(errorText(error), "error"));
 });
