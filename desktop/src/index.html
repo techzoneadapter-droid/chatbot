@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PageBot Desktop</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">PB</div>
+        <div>
+          <strong>PageBot Desktop</strong>
+          <span>Facebook + AI</span>
+        </div>
+      </div>
+      <button id="new-profile" class="primary full">+ Tạo profile trình duyệt</button>
+      <div class="section-title">Profiles</div>
+      <div id="profiles" class="profiles"></div>
+      <div class="sidebar-note">
+        Mỗi profile có vùng đăng nhập riêng. Không chia sẻ cookie giữa các tài khoản Facebook.
+      </div>
+    </aside>
+
+    <header class="browser-bar">
+      <div class="nav-buttons">
+        <button id="back" title="Quay lại">←</button>
+        <button id="forward" title="Tiến">→</button>
+        <button id="reload" title="Tải lại">↻</button>
+        <button id="home" title="Trang mặc định">⌂</button>
+      </div>
+      <form id="url-form" class="url-form">
+        <input id="url" spellcheck="false" placeholder="https://business.facebook.com/latest/inbox" />
+      </form>
+      <div id="browser-loading" class="browser-loading"></div>
+    </header>
+
+    <aside class="ai-panel">
+      <div class="ai-header">
+        <div>
+          <span class="eyebrow">TRỢ LÝ AI</span>
+          <h2 id="active-profile-name">Chưa mở profile</h2>
+        </div>
+        <label class="switch-wrap" title="Chỉ tự động trả lời hội thoại đang mở">
+          <input id="auto-reply" type="checkbox" />
+          <span class="switch"></span>
+          <b>Auto</b>
+        </label>
+      </div>
+
+      <div class="panel-scroll">
+        <section class="card compact">
+          <div class="two-col">
+            <label>
+              <span>AI</span>
+              <select id="ai-provider">
+                <option value="gemini">Gemini</option>
+                <option value="meta">Meta Model API</option>
+              </select>
+            </label>
+            <label>
+              <span>Model</span>
+              <input id="ai-model" value="gemini-3.8-flash" />
+            </label>
+          </div>
+          <div class="api-row">
+            <span id="api-status" class="status-badge warn">Chưa có API key</span>
+          </div>
+          <label>
+            <span>API key</span>
+            <input id="api-key" type="password" autocomplete="off" placeholder="Gemini API key" />
+          </label>
+          <div class="button-row">
+            <button id="save-api-key" class="secondary">Lưu key</button>
+            <button id="clear-api-key" class="ghost danger">Xóa key</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <label>
+            <span>Dữ liệu sản phẩm / giá / FAQ của profile này</span>
+            <textarea id="knowledge" rows="9" placeholder="Ví dụ:\nSản phẩm A - giá 500.000đ\nBảo hành 12 tháng\nPhí ship..."></textarea>
+          </label>
+          <label>
+            <span>Cách bot nói chuyện</span>
+            <textarea id="system-prompt" rows="4" placeholder="Ví dụ: Xưng em, gọi khách là anh/chị, trả lời ngắn gọn."></textarea>
+          </label>
+          <div class="button-row">
+            <button id="save-profile" class="primary">Lưu cấu hình</button>
+            <button id="delete-profile" class="ghost danger">Xóa profile</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-head">
+            <div>
+              <strong>Hội thoại đang mở</strong>
+              <small>AI chỉ thao tác cuộc chat đang hiển thị</small>
+            </div>
+            <button id="inspect-chat" class="icon-button" title="Kiểm tra đọc hội thoại">◎</button>
+          </div>
+          <button id="suggest-reply" class="primary full">AI soạn câu trả lời</button>
+          <label class="output-label">
+            <span>Câu trả lời</span>
+            <textarea id="reply-output" rows="5" placeholder="AI sẽ soạn câu trả lời ở đây..."></textarea>
+          </label>
+          <button id="send-reply" class="secondary full" disabled>Gửi vào Facebook</button>
+        </section>
+
+        <section class="card activity-card">
+          <div class="section-head">
+            <div>
+              <strong>Hoạt động</strong>
+              <small>Nhật ký trong phiên hiện tại</small>
+            </div>
+          </div>
+          <div id="activity" class="activity"></div>
+        </section>
+
+        <div class="safety-note">
+          Auto Chat chỉ chạy trên profile đang mở, có cooldown và giới hạn tốc độ. Không có chức năng gửi hàng loạt hoặc né cơ chế của Facebook.
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <dialog id="profile-dialog" class="dialog">
+    <form id="profile-form" method="dialog">
+      <div class="dialog-head">
+        <div>
+          <span class="eyebrow">PROFILE MỚI</span>
+          <h3>Tạo trình duyệt riêng</h3>
+        </div>
+      </div>
+      <label>
+        <span>Tên profile</span>
+        <input name="name" required placeholder="Ví dụ: FB Bao / Page TNANO" />
+      </label>
+      <label>
+        <span>Trang khởi động</span>
+        <input name="startUrl" value="https://business.facebook.com/latest/inbox" />
+      </label>
+      <p class="help">Sau khi tạo, Facebook sẽ mở ngay trong màn hình chính. Đăng nhập bình thường; phiên đăng nhập được lưu riêng cho profile này.</p>
+      <div class="dialog-actions">
+        <button id="cancel-profile" type="button" class="ghost">Hủy</button>
+        <button type="submit" class="primary">Tạo và mở</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="busy" class="busy">
+    <div class="spinner"></div>
+    <span id="busy-text"></span>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
