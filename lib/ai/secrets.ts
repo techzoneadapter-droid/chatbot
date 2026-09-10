@@ -2,8 +2,9 @@ import { createHash, randomBytes, createCipheriv, createDecipheriv } from "node:
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import type { AIProviderName } from "@/lib/types";
 
-type SecretMap = Partial<Record<AIProviderName, { encrypted: string; iv: string; tag: string; updated_at: string }>>;
-export type AIProviderStatus = Record<AIProviderName, boolean> & { encryptedStoreReady?: boolean };
+export type SecretProviderName = AIProviderName | "meta";
+type SecretMap = Partial<Record<SecretProviderName, { encrypted: string; iv: string; tag: string; updated_at: string }>>;
+export type AIProviderStatus = Record<SecretProviderName, boolean> & { encryptedStoreReady?: boolean };
 
 const SETTINGS_KEY = "ai_provider_secrets";
 
@@ -21,11 +22,12 @@ export async function getProviderSecretStatus() {
   return {
     openai: Boolean(await getProviderApiKey("openai")),
     gemini: Boolean(await getProviderApiKey("gemini")),
+    meta: Boolean(await getProviderApiKey("meta")),
     encryptedStoreReady: canStoreEncryptedSecrets()
   };
 }
 
-export async function getProviderApiKey(provider: AIProviderName) {
+export async function getProviderApiKey(provider: SecretProviderName) {
   const key = encryptionKey();
   if (key) {
     const stored = (await readSecretMap())[provider];
@@ -41,10 +43,12 @@ export async function getProviderApiKey(provider: AIProviderName) {
       }
     }
   }
-  return provider === "openai" ? process.env.OPENAI_API_KEY?.trim() || null : process.env.GEMINI_API_KEY?.trim() || null;
+  if (provider === "openai") return process.env.OPENAI_API_KEY?.trim() || null;
+  if (provider === "meta") return process.env.MODEL_API_KEY?.trim() || process.env.META_MODEL_API_KEY?.trim() || null;
+  return process.env.GEMINI_API_KEY?.trim() || null;
 }
 
-export async function saveProviderApiKey(provider: AIProviderName, apiKey: string) {
+export async function saveProviderApiKey(provider: SecretProviderName, apiKey: string) {
   const supabase = createServiceSupabaseClient();
   const key = encryptionKey();
   if (!supabase || !key) throw new Error("Encrypted secret store is not configured");
@@ -66,7 +70,7 @@ export async function saveProviderApiKey(provider: AIProviderName, apiKey: strin
   if (error) throw new Error(error.message);
 }
 
-export async function deleteProviderApiKey(provider: AIProviderName) {
+export async function deleteProviderApiKey(provider: SecretProviderName) {
   const supabase = createServiceSupabaseClient();
   const key = encryptionKey();
   if (!supabase || !key) throw new Error("Encrypted secret store is not configured");
