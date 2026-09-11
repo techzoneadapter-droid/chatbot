@@ -4,7 +4,6 @@ app.commandLine.appendSwitch(
   "disable-features",
   "WebAuthentication,WebAuthenticationConditionalUI"
 );
-app.commandLine.appendSwitch("disable-quic");
 
 app.on("browser-window-created", (_event, window) => {
   try {
@@ -17,10 +16,12 @@ app.on("browser-window-created", (_event, window) => {
       window.show();
     };
     window.once("ready-to-show", reveal);
-    setTimeout(reveal, 2200).unref?.();
+    setTimeout(reveal, 1200).unref?.();
   } catch {}
 });
 
+// This wrapper is dormant until an AI request is actually made. It adds retry
+// only for transient provider errors and does not perform any startup network work.
 const nativeFetch = globalThis.fetch?.bind(globalThis);
 const RETRYABLE_AI_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_AI_ATTEMPTS = 3;
