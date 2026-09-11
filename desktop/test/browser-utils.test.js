@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   DEFAULT_START_URL,
+  DEFAULT_SEARCH_URL,
   normalizeUrl,
   isSupportedChatUrl,
   cleanUserAgent,
@@ -12,6 +13,13 @@ const {
 test("normalizeUrl uses Business Suite inbox by default", () => {
   assert.equal(normalizeUrl(""), DEFAULT_START_URL);
   assert.equal(normalizeUrl("business.facebook.com/latest/inbox"), "https://business.facebook.com/latest/inbox");
+});
+
+test("normalizeUrl behaves like a browser omnibox", () => {
+  assert.equal(normalizeUrl("facebook.com"), "https://facebook.com");
+  assert.equal(normalizeUrl("example.com/path?q=1"), "https://example.com/path?q=1");
+  assert.equal(normalizeUrl("https://messenger.com"), "https://messenger.com");
+  assert.equal(normalizeUrl("cách chạy quảng cáo facebook"), `${DEFAULT_SEARCH_URL}${encodeURIComponent("cách chạy quảng cáo facebook")}`);
 });
 
 test("supported chat URL guard only allows Messenger chat surfaces", () => {
