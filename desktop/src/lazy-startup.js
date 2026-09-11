@@ -1,12 +1,12 @@
 (() => {
   document.addEventListener("DOMContentLoaded", () => {
-    // renderer.js completes its normal lightweight init, but preload defers the
-    // automatic browser creation. Clear the temporary selected profile state so
-    // the first real user click opens it normally.
-    setTimeout(async () => {
+    let attempts = 0;
+    const timer = setInterval(async () => {
+      attempts += 1;
       try {
         const browserState = await window.pagebot.browser.state();
-        if (!browserState?.url && typeof state !== "undefined") {
+        const hasTemporarySelection = typeof state !== "undefined" && Boolean(state.activeProfile);
+        if (!browserState?.url && hasTemporarySelection) {
           state.activeProfile = null;
           state.browserSupportedChat = false;
           state.lastSuggestion = "";
@@ -15,8 +15,11 @@
           const url = document.querySelector("#url");
           if (url) url.value = "";
           if (typeof log === "function") log("Khởi động nhanh: chưa mở Facebook. Chọn profile bên trái khi cần dùng.", "success");
+          clearInterval(timer);
+          return;
         }
       } catch {}
-    }, 350);
+      if (attempts >= 20) clearInterval(timer);
+    }, 100);
   });
 })();
