@@ -1,32 +1,22 @@
 (() => {
-  // renderer.js automatically opens the first saved profile during init. For fast
-  // startup we suppress only that first automatic open, then restore the real
-  // function so a user click opens the browser normally.
-  const realOpen = window.pagebot?.profiles?.open;
-  if (typeof realOpen !== "function") return;
-
-  let suppressFirstOpen = true;
-  window.pagebot.profiles.open = async (profileId) => {
-    if (!suppressFirstOpen) return realOpen(profileId);
-    suppressFirstOpen = false;
-    const profiles = await window.pagebot.profiles.list();
-    return profiles.find((profile) => profile.id === profileId) || null;
-  };
-
   document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => {
-      window.pagebot.profiles.open = realOpen;
+    // renderer.js completes its normal lightweight init, but preload defers the
+    // automatic browser creation. Clear the temporary selected profile state so
+    // the first real user click opens it normally.
+    setTimeout(async () => {
       try {
-        const browserWasNotCreated = !document.querySelector("#url")?.value;
-        if (browserWasNotCreated && typeof state !== "undefined") {
+        const browserState = await window.pagebot.browser.state();
+        if (!browserState?.url && typeof state !== "undefined") {
           state.activeProfile = null;
           state.browserSupportedChat = false;
           state.lastSuggestion = "";
           if (typeof renderProfiles === "function") renderProfiles();
           if (typeof renderAiPanel === "function") renderAiPanel();
+          const url = document.querySelector("#url");
+          if (url) url.value = "";
+          if (typeof log === "function") log("Khởi động nhanh: chưa mở Facebook. Chọn profile bên trái khi cần dùng.", "success");
         }
-        if (typeof log === "function") log("Khởi động nhanh: chưa mở Facebook. Chọn profile bên trái khi cần dùng.", "success");
       } catch {}
-    }, 60);
+    }, 350);
   });
 })();
