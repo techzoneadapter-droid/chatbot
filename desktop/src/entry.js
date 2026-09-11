@@ -1,18 +1,26 @@
 const { app } = require("electron");
 
-// Meta/Facebook can automatically trigger WebAuthn/passkey discovery on login.
-// In an unsigned Electron DEV build Windows then shows the native "Making sure
-// it's you / Insert your security key" dialog repeatedly. PageBot uses password,
-// OTP and normal Facebook login instead, so disable WebAuthn in this embedded
-// browser before Chromium starts. This prevents the OS security-key popup.
 app.commandLine.appendSwitch(
   "disable-features",
   "WebAuthentication,WebAuthenticationConditionalUI"
 );
+app.commandLine.appendSwitch("disable-quic");
 
-// AI providers can briefly return 429/5xx while a model is overloaded. Keep this
-// retry layer at the process entry point so both manual replies and Auto Chat get
-// the same resilience without duplicating logic in each provider client.
+app.on("browser-window-created", (_event, window) => {
+  try {
+    window.setBackgroundColor("#f7f9fc");
+    window.hide();
+    let shown = false;
+    const reveal = () => {
+      if (shown || window.isDestroyed()) return;
+      shown = true;
+      window.show();
+    };
+    window.once("ready-to-show", reveal);
+    setTimeout(reveal, 2200).unref?.();
+  } catch {}
+});
+
 const nativeFetch = globalThis.fetch?.bind(globalThis);
 const RETRYABLE_AI_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_AI_ATTEMPTS = 3;
@@ -39,19 +47,16 @@ function wait(ms, signal) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason || new Error("aborted"));
     const timer = setTimeout(resolve, ms);
-    if (signal) {
-      signal.addEventListener("abort", () => {
-        clearTimeout(timer);
-        reject(signal.reason || new Error("aborted"));
-      }, { once: true });
-    }
+    if (signal) signal.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(signal.reason || new Error("aborted"));
+    }, { once: true });
   });
 }
 
 if (nativeFetch) {
   globalThis.fetch = async function pageBotFetch(input, init = {}) {
     if (!isAIEndpoint(input)) return nativeFetch(input, init);
-
     let lastError = null;
     for (let attempt = 1; attempt <= MAX_AI_ATTEMPTS; attempt += 1) {
       try {
