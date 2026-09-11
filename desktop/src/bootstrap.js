@@ -15,6 +15,66 @@ function dataFile() {
   return path.join(app.getPath("userData"), "pagebot-data.json");
 }
 
+function installDataFileReadCache() {
+  const target = path.resolve(dataFile());
+  const originalReadFileSync = fs.readFileSync.bind(fs);
+  const originalWriteFileSync = fs.writeFileSync.bind(fs);
+  const originalRenameSync = fs.renameSync.bind(fs);
+  const originalCopyFileSync = fs.copyFileSync.bind(fs);
+  const originalUnlinkSync = fs.unlinkSync.bind(fs);
+  let cachedUtf8 = null;
+
+  const sameTarget = (value) => {
+    try {
+      return path.resolve(String(value)) === target;
+    } catch {
+      return false;
+    }
+  };
+  const touchesTarget = (value) => {
+    try {
+      const resolved = path.resolve(String(value));
+      return resolved === target || resolved === `${target}.tmp`;
+    } catch {
+      return false;
+    }
+  };
+  const utf8Requested = (options) => options === "utf8" || options === "utf-8" || options?.encoding === "utf8" || options?.encoding === "utf-8";
+
+  fs.readFileSync = function patchedReadFileSync(file, options) {
+    if (sameTarget(file) && utf8Requested(options)) {
+      if (cachedUtf8 !== null) return cachedUtf8;
+      const value = originalReadFileSync(file, options);
+      cachedUtf8 = String(value);
+      return value;
+    }
+    return originalReadFileSync(file, options);
+  };
+
+  fs.writeFileSync = function patchedWriteFileSync(file, ...args) {
+    if (touchesTarget(file)) cachedUtf8 = null;
+    return originalWriteFileSync(file, ...args);
+  };
+
+  fs.renameSync = function patchedRenameSync(source, destination) {
+    const result = originalRenameSync(source, destination);
+    if (touchesTarget(source) || sameTarget(destination)) cachedUtf8 = null;
+    return result;
+  };
+
+  fs.copyFileSync = function patchedCopyFileSync(source, destination, ...args) {
+    const result = originalCopyFileSync(source, destination, ...args);
+    if (sameTarget(destination)) cachedUtf8 = null;
+    return result;
+  };
+
+  fs.unlinkSync = function patchedUnlinkSync(file) {
+    const result = originalUnlinkSync(file);
+    if (touchesTarget(file)) cachedUtf8 = null;
+    return result;
+  };
+}
+
 function loadData() {
   const fallback = { profiles: [], secrets: {} };
   try {
@@ -256,6 +316,7 @@ function registerProxyIpc() {
 }
 
 app.whenReady().then(async () => {
+  installDataFileReadCache();
   registerProxyIpc();
   const data = loadData();
   for (const profile of data.profiles) {
