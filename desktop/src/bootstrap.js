@@ -10,6 +10,7 @@ app.commandLine.appendSwitch("disable-smooth-scrolling");
 
 const proxyAuthBySession = new WeakMap();
 const appliedProxySignatures = new Map();
+const performanceConfiguredSessions = new WeakSet();
 
 function dataFile() {
   return path.join(app.getPath("userData"), "pagebot-data.json");
@@ -164,6 +165,20 @@ function proxyRules(proxy) {
   return `http://${proxy.host}:${proxy.port}`;
 }
 
+function installPerformanceFilters(ses) {
+  if (!ses || performanceConfiguredSessions.has(ses)) return;
+  performanceConfiguredSessions.add(ses);
+
+  // Messenger/Business Suite can preload videos in the background even when the
+  // user only needs text chat. Blocking media requests saves a large amount of
+  // proxy bandwidth while leaving HTML, JS, CSS, images and chat attachments intact.
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    const url = String(details.url || "");
+    const heavyMedia = details.resourceType === "media" || /\.(?:mp4|m4v|webm|mov)(?:\?|$)/i.test(url);
+    callback({ cancel: heavyMedia });
+  });
+}
+
 function cacheProxyAuth(profile, data, ses) {
   const proxy = normalizeProxy(profile?.proxy || {});
   if (!proxy.enabled || !proxy.username) {
@@ -190,6 +205,7 @@ async function applyProxy(profileId, proxyOverride) {
   const proxy = normalizeProxy(proxyOverride || profile.proxy || {});
   validateEnabledProxy(proxy);
   const ses = session.fromPartition(`persist:pagebot-${profileId}`);
+  installPerformanceFilters(ses);
   cacheProxyAuth({ ...profile, proxy }, data, ses);
 
   const signature = proxySignature(proxy);
@@ -206,8 +222,6 @@ async function applyProxy(profileId, proxyOverride) {
   }
   appliedProxySignatures.set(profileId, signature);
 
-  // Reconnect only when proxy settings actually changed. Repeated proxy tests no
-  // longer tear down Facebook's active connections and make the app feel frozen.
   try {
     await ses.closeAllConnections();
   } catch {}
@@ -270,9 +284,6 @@ function resolveProxyAuth(webContents) {
   const cached = proxyAuthBySession.get(ses);
   if (cached) return cached;
 
-  // Only the first proxy-auth challenge for a session touches disk. Subsequent
-  // requests use the in-memory cache, avoiding synchronous JSON reads on the
-  // main Electron thread for every proxied connection.
   const data = loadData();
   for (const profile of data.profiles) {
     try {
@@ -319,13 +330,15 @@ app.whenReady().then(async () => {
   installDataFileReadCache();
   registerProxyIpc();
   const data = loadData();
-  for (const profile of data.profiles) {
-    if (!profile?.proxy?.enabled) continue;
+  await Promise.allSettled(data.profiles.map(async (profile) => {
+    const ses = session.fromPartition(`persist:pagebot-${profile.id}`);
+    installPerformanceFilters(ses);
+    if (!profile?.proxy?.enabled) return;
     try {
       await applyProxy(profile.id, profile.proxy);
     } catch (error) {
       console.error("[proxy] startup apply failed", profile.id, error instanceof Error ? error.message : error);
     }
-  }
+  }));
   require("./main");
 });
