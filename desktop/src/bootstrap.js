@@ -2,8 +2,77 @@ const { app, ipcMain, session, safeStorage } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
+// Favor GPU-backed painting for the embedded browser and remove smooth-scroll work
+// that is noticeable on Facebook's very large DOM. These switches are set before ready.
+app.commandLine.appendSwitch("enable-gpu-rasterization");
+app.commandLine.appendSwitch("enable-zero-copy");
+app.commandLine.appendSwitch("disable-smooth-scrolling");
+
+const proxyAuthBySession = new WeakMap();
+const appliedProxySignatures = new Map();
+
 function dataFile() {
   return path.join(app.getPath("userData"), "pagebot-data.json");
+}
+
+function installDataFileReadCache() {
+  const target = path.resolve(dataFile());
+  const originalReadFileSync = fs.readFileSync.bind(fs);
+  const originalWriteFileSync = fs.writeFileSync.bind(fs);
+  const originalRenameSync = fs.renameSync.bind(fs);
+  const originalCopyFileSync = fs.copyFileSync.bind(fs);
+  const originalUnlinkSync = fs.unlinkSync.bind(fs);
+  let cachedUtf8 = null;
+
+  const sameTarget = (value) => {
+    try {
+      return path.resolve(String(value)) === target;
+    } catch {
+      return false;
+    }
+  };
+  const touchesTarget = (value) => {
+    try {
+      const resolved = path.resolve(String(value));
+      return resolved === target || resolved === `${target}.tmp`;
+    } catch {
+      return false;
+    }
+  };
+  const utf8Requested = (options) => options === "utf8" || options === "utf-8" || options?.encoding === "utf8" || options?.encoding === "utf-8";
+
+  fs.readFileSync = function patchedReadFileSync(file, options) {
+    if (sameTarget(file) && utf8Requested(options)) {
+      if (cachedUtf8 !== null) return cachedUtf8;
+      const value = originalReadFileSync(file, options);
+      cachedUtf8 = String(value);
+      return value;
+    }
+    return originalReadFileSync(file, options);
+  };
+
+  fs.writeFileSync = function patchedWriteFileSync(file, ...args) {
+    if (touchesTarget(file)) cachedUtf8 = null;
+    return originalWriteFileSync(file, ...args);
+  };
+
+  fs.renameSync = function patchedRenameSync(source, destination) {
+    const result = originalRenameSync(source, destination);
+    if (touchesTarget(source) || sameTarget(destination)) cachedUtf8 = null;
+    return result;
+  };
+
+  fs.copyFileSync = function patchedCopyFileSync(source, destination, ...args) {
+    const result = originalCopyFileSync(source, destination, ...args);
+    if (sameTarget(destination)) cachedUtf8 = null;
+    return result;
+  };
+
+  fs.unlinkSync = function patchedUnlinkSync(file) {
+    const result = originalUnlinkSync(file);
+    if (touchesTarget(file)) cachedUtf8 = null;
+    return result;
+  };
 }
 
 function loadData() {
@@ -67,6 +136,11 @@ function normalizeProxy(input = {}) {
   };
 }
 
+function proxySignature(proxy) {
+  const value = normalizeProxy(proxy);
+  return [value.enabled ? "1" : "0", value.type, value.host, value.port, value.username].join("|");
+}
+
 function publicProxy(profile, data = loadData()) {
   const proxy = normalizeProxy(profile?.proxy || {});
   return {
@@ -90,6 +164,25 @@ function proxyRules(proxy) {
   return `http://${proxy.host}:${proxy.port}`;
 }
 
+function cacheProxyAuth(profile, data, ses) {
+  const proxy = normalizeProxy(profile?.proxy || {});
+  if (!proxy.enabled || !proxy.username) {
+    proxyAuthBySession.delete(ses);
+    return;
+  }
+  proxyAuthBySession.set(ses, {
+    profileId: profile.id,
+    username: proxy.username,
+    password: decryptSecret(data.secrets?.[proxySecretKey(profile.id)]) || ""
+  });
+}
+
+function invalidateProxyAuth(profileId) {
+  try {
+    proxyAuthBySession.delete(session.fromPartition(`persist:pagebot-${profileId}`));
+  } catch {}
+}
+
 async function applyProxy(profileId, proxyOverride) {
   const data = loadData();
   const profile = getProfile(profileId, data);
@@ -97,6 +190,11 @@ async function applyProxy(profileId, proxyOverride) {
   const proxy = normalizeProxy(proxyOverride || profile.proxy || {});
   validateEnabledProxy(proxy);
   const ses = session.fromPartition(`persist:pagebot-${profileId}`);
+  cacheProxyAuth({ ...profile, proxy }, data, ses);
+
+  const signature = proxySignature(proxy);
+  if (appliedProxySignatures.get(profileId) === signature) return proxy;
+
   if (!proxy.enabled) {
     await ses.setProxy({ mode: "direct" });
   } else {
@@ -106,6 +204,10 @@ async function applyProxy(profileId, proxyOverride) {
       proxyBypassRules: "<-loopback>"
     });
   }
+  appliedProxySignatures.set(profileId, signature);
+
+  // Reconnect only when proxy settings actually changed. Repeated proxy tests no
+  // longer tear down Facebook's active connections and make the app feel frozen.
   try {
     await ses.closeAllConnections();
   } catch {}
@@ -128,6 +230,7 @@ async function saveProxy(profileId, input = {}) {
   }
 
   saveData(data);
+  invalidateProxyAuth(profileId);
   await applyProxy(profileId, proxy);
   return publicProxy(profile, data);
 }
@@ -161,27 +264,32 @@ async function testProxy(profileId) {
   }
 }
 
-function findProfileForWebContents(webContents) {
+function resolveProxyAuth(webContents) {
+  const ses = webContents?.session;
+  if (!ses) return null;
+  const cached = proxyAuthBySession.get(ses);
+  if (cached) return cached;
+
+  // Only the first proxy-auth challenge for a session touches disk. Subsequent
+  // requests use the in-memory cache, avoiding synchronous JSON reads on the
+  // main Electron thread for every proxied connection.
   const data = loadData();
-  return data.profiles.find((profile) => {
+  for (const profile of data.profiles) {
     try {
-      return session.fromPartition(`persist:pagebot-${profile.id}`) === webContents.session;
-    } catch {
-      return false;
-    }
-  }) || null;
+      if (session.fromPartition(`persist:pagebot-${profile.id}`) !== ses) continue;
+      cacheProxyAuth(profile, data, ses);
+      return proxyAuthBySession.get(ses) || null;
+    } catch {}
+  }
+  return null;
 }
 
 app.on("login", (event, webContents, _details, authInfo, callback) => {
   if (!authInfo?.isProxy || !webContents) return;
-  const data = loadData();
-  const profile = findProfileForWebContents(webContents);
-  if (!profile) return;
-  const proxy = normalizeProxy(profile.proxy || {});
-  if (!proxy.enabled || !proxy.username) return;
-  const password = decryptSecret(data.secrets?.[proxySecretKey(profile.id)]);
+  const auth = resolveProxyAuth(webContents);
+  if (!auth?.username) return;
   event.preventDefault();
-  callback(proxy.username, password || "");
+  callback(auth.username, auth.password || "");
 });
 
 function registerProxyIpc() {
@@ -201,12 +309,14 @@ function registerProxyIpc() {
     const next = normalizeProxy({ ...(profile.proxy || {}), enabled: false });
     profile.proxy = next;
     saveData(data);
+    invalidateProxyAuth(profileId);
     await applyProxy(profileId, next);
     return publicProxy(profile, data);
   });
 }
 
 app.whenReady().then(async () => {
+  installDataFileReadCache();
   registerProxyIpc();
   const data = loadData();
   for (const profile of data.profiles) {
