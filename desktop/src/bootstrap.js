@@ -1,6 +1,7 @@
 const { app, ipcMain, session, safeStorage } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const { registerAiRuntimeIpc } = require("./ai-runtime");
 
 app.commandLine.appendSwitch("enable-gpu-rasterization");
 app.commandLine.appendSwitch("enable-zero-copy");
@@ -22,8 +23,16 @@ function installDataFileReadCache() {
   const originalCopyFileSync = fs.copyFileSync.bind(fs);
   const originalUnlinkSync = fs.unlinkSync.bind(fs);
   let cachedUtf8 = null;
-  const sameTarget = (value) => { try { return path.resolve(String(value)) === target; } catch { return false; } };
-  const touchesTarget = (value) => { try { const resolved = path.resolve(String(value)); return resolved === target || resolved === `${target}.tmp`; } catch { return false; } };
+
+  const sameTarget = (value) => {
+    try { return path.resolve(String(value)) === target; } catch { return false; }
+  };
+  const touchesTarget = (value) => {
+    try {
+      const resolved = path.resolve(String(value));
+      return resolved === target || resolved === `${target}.tmp`;
+    } catch { return false; }
+  };
   const utf8Requested = (options) => options === "utf8" || options === "utf-8" || options?.encoding === "utf8" || options?.encoding === "utf-8";
 
   fs.readFileSync = function patchedReadFileSync(file, options) {
@@ -35,10 +44,26 @@ function installDataFileReadCache() {
     }
     return originalReadFileSync(file, options);
   };
-  fs.writeFileSync = function patchedWriteFileSync(file, ...args) { if (touchesTarget(file)) cachedUtf8 = null; return originalWriteFileSync(file, ...args); };
-  fs.renameSync = function patchedRenameSync(source, destination) { const result = originalRenameSync(source, destination); if (touchesTarget(source) || sameTarget(destination)) cachedUtf8 = null; return result; };
-  fs.copyFileSync = function patchedCopyFileSync(source, destination, ...args) { const result = originalCopyFileSync(source, destination, ...args); if (sameTarget(destination)) cachedUtf8 = null; return result; };
-  fs.unlinkSync = function patchedUnlinkSync(file) { const result = originalUnlinkSync(file); if (touchesTarget(file)) cachedUtf8 = null; return result; };
+
+  fs.writeFileSync = function patchedWriteFileSync(file, ...args) {
+    if (touchesTarget(file)) cachedUtf8 = null;
+    return originalWriteFileSync(file, ...args);
+  };
+  fs.renameSync = function patchedRenameSync(source, destination) {
+    const result = originalRenameSync(source, destination);
+    if (touchesTarget(source) || sameTarget(destination)) cachedUtf8 = null;
+    return result;
+  };
+  fs.copyFileSync = function patchedCopyFileSync(source, destination, ...args) {
+    const result = originalCopyFileSync(source, destination, ...args);
+    if (sameTarget(destination)) cachedUtf8 = null;
+    return result;
+  };
+  fs.unlinkSync = function patchedUnlinkSync(file) {
+    const result = originalUnlinkSync(file);
+    if (touchesTarget(file)) cachedUtf8 = null;
+    return result;
+  };
 }
 
 function loadData() {
@@ -47,8 +72,13 @@ function loadData() {
     const file = dataFile();
     if (!fs.existsSync(file)) return fallback;
     const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-    return { profiles: Array.isArray(parsed.profiles) ? parsed.profiles : [], secrets: parsed.secrets && typeof parsed.secrets === "object" ? parsed.secrets : {} };
-  } catch { return fallback; }
+    return {
+      profiles: Array.isArray(parsed.profiles) ? parsed.profiles : [],
+      secrets: parsed.secrets && typeof parsed.secrets === "object" ? parsed.secrets : {}
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 function saveData(data) {
@@ -56,18 +86,28 @@ function saveData(data) {
   const target = dataFile();
   const temp = `${target}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(data, null, 2), "utf8");
-  try { fs.renameSync(temp, target); } catch { fs.copyFileSync(temp, target); fs.unlinkSync(temp); }
+  try { fs.renameSync(temp, target); }
+  catch {
+    fs.copyFileSync(temp, target);
+    fs.unlinkSync(temp);
+  }
 }
 
 function encryptSecret(value) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows secure storage chưa sẵn sàng.");
   return safeStorage.encryptString(String(value || "")).toString("base64");
 }
+
 function decryptSecret(value) {
   if (!value || !safeStorage.isEncryptionAvailable()) return "";
-  try { return safeStorage.decryptString(Buffer.from(value, "base64")); } catch { return ""; }
+  try { return safeStorage.decryptString(Buffer.from(value, "base64")); }
+  catch { return ""; }
 }
-function proxySecretKey(profileId) { return `proxy:${profileId}`; }
+
+function proxySecretKey(profileId) {
+  return `proxy:${profileId}`;
+}
+
 function normalizeProxy(input = {}) {
   const type = input.type === "socks5" ? "socks5" : "http";
   const host = String(input.host || "").trim().slice(0, 255);
@@ -76,11 +116,31 @@ function normalizeProxy(input = {}) {
   const username = String(input.username || "").trim().slice(0, 255);
   return { enabled: Boolean(input.enabled), type, host, port, username };
 }
-function proxySignature(proxy) { const value = normalizeProxy(proxy); return [value.enabled ? "1" : "0", value.type, value.host, value.port, value.username].join("|"); }
-function publicProxy(profile, data = loadData()) { const proxy = normalizeProxy(profile?.proxy || {}); return { ...proxy, hasPassword: Boolean(data.secrets?.[proxySecretKey(profile?.id)]) }; }
-function getProfile(profileId, data = loadData()) { return data.profiles.find((profile) => profile.id === profileId) || null; }
-function validateEnabledProxy(proxy) { if (!proxy.enabled) return; if (!proxy.host) throw new Error("Hãy nhập host/IP proxy."); if (!proxy.port) throw new Error("Port proxy không hợp lệ."); }
-function proxyRules(proxy) { return proxy.type === "socks5" ? `socks5://${proxy.host}:${proxy.port}` : `http://${proxy.host}:${proxy.port}`; }
+
+function proxySignature(proxy) {
+  const value = normalizeProxy(proxy);
+  return [value.enabled ? "1" : "0", value.type, value.host, value.port, value.username].join("|");
+}
+
+function publicProxy(profile, data = loadData()) {
+  const proxy = normalizeProxy(profile?.proxy || {});
+  return { ...proxy, hasPassword: Boolean(data.secrets?.[proxySecretKey(profile?.id)]) };
+}
+
+function getProfile(profileId, data = loadData()) {
+  return data.profiles.find((profile) => profile.id === profileId) || null;
+}
+
+function validateEnabledProxy(proxy) {
+  if (!proxy.enabled) return;
+  if (!proxy.host) throw new Error("Hãy nhập host/IP proxy.");
+  if (!proxy.port) throw new Error("Port proxy không hợp lệ.");
+}
+
+function proxyRules(proxy) {
+  if (proxy.type === "socks5") return `socks5://${proxy.host}:${proxy.port}`;
+  return `http://${proxy.host}:${proxy.port}`;
+}
 
 function installPerformanceFilters(ses) {
   if (!ses || performanceConfiguredSessions.has(ses)) return;
@@ -94,10 +154,21 @@ function installPerformanceFilters(ses) {
 
 function cacheProxyAuth(profile, data, ses) {
   const proxy = normalizeProxy(profile?.proxy || {});
-  if (!proxy.enabled || !proxy.username) { proxyAuthBySession.delete(ses); return; }
-  proxyAuthBySession.set(ses, { profileId: profile.id, username: proxy.username, password: decryptSecret(data.secrets?.[proxySecretKey(profile.id)]) || "" });
+  if (!proxy.enabled || !proxy.username) {
+    proxyAuthBySession.delete(ses);
+    return;
+  }
+  proxyAuthBySession.set(ses, {
+    profileId: profile.id,
+    username: proxy.username,
+    password: decryptSecret(data.secrets?.[proxySecretKey(profile.id)]) || ""
+  });
 }
-function invalidateProxyAuth(profileId) { try { proxyAuthBySession.delete(session.fromPartition(`persist:pagebot-${profileId}`)); } catch {} }
+
+function invalidateProxyAuth(profileId) {
+  try { proxyAuthBySession.delete(session.fromPartition(`persist:pagebot-${profileId}`)); }
+  catch {}
+}
 
 async function applyProxy(profileId, proxyOverride) {
   const data = loadData();
@@ -106,15 +177,35 @@ async function applyProxy(profileId, proxyOverride) {
   const proxy = normalizeProxy(proxyOverride || profile.proxy || {});
   validateEnabledProxy(proxy);
   const ses = session.fromPartition(`persist:pagebot-${profileId}`);
-  installPerformanceFilters(ses);
+
+  if (proxy.enabled) installPerformanceFilters(ses);
   cacheProxyAuth({ ...profile, proxy }, data, ses);
+
   const signature = proxySignature(proxy);
   if (appliedProxySignatures.get(profileId) === signature) return proxy;
-  if (!proxy.enabled) await ses.setProxy({ mode: "direct" });
-  else await ses.setProxy({ mode: "fixed_servers", proxyRules: proxyRules(proxy), proxyBypassRules: "<-loopback>" });
+
+  if (!proxy.enabled) {
+    await ses.setProxy({ mode: "direct" });
+  } else {
+    await ses.setProxy({
+      mode: "fixed_servers",
+      proxyRules: proxyRules(proxy),
+      proxyBypassRules: "<-loopback>"
+    });
+  }
   appliedProxySignatures.set(profileId, signature);
   try { await ses.closeAllConnections(); } catch {}
   return proxy;
+}
+
+async function prepareProfileNetwork(profileId) {
+  const data = loadData();
+  const profile = getProfile(profileId, data);
+  if (!profile) throw new Error("Profile không tồn tại.");
+  const proxy = normalizeProxy(profile.proxy || {});
+  if (!proxy.enabled) return publicProxy(profile, data);
+  await applyProxy(profileId, proxy);
+  return publicProxy(profile, data);
 }
 
 async function saveProxy(profileId, input = {}) {
@@ -124,8 +215,12 @@ async function saveProxy(profileId, input = {}) {
   const proxy = normalizeProxy(input);
   validateEnabledProxy(proxy);
   profile.proxy = proxy;
-  if (typeof input.password === "string" && input.password.length) data.secrets[proxySecretKey(profileId)] = encryptSecret(input.password.slice(0, 512));
+
+  if (typeof input.password === "string" && input.password.length) {
+    data.secrets[proxySecretKey(profileId)] = encryptSecret(input.password.slice(0, 512));
+  }
   if (input.clearPassword === true) delete data.secrets[proxySecretKey(profileId)];
+
   saveData(data);
   invalidateProxyAuth(profileId);
   await applyProxy(profileId, proxy);
@@ -138,6 +233,7 @@ async function testProxy(profileId) {
   if (!profile) throw new Error("Profile không tồn tại.");
   const proxy = await applyProxy(profileId, profile.proxy || {});
   if (!proxy.enabled) return { ok: true, direct: true, ip: "", resolvedProxy: "DIRECT" };
+
   const ses = session.fromPartition(`persist:pagebot-${profileId}`);
   const resolvedProxy = await ses.resolveProxy("https://www.facebook.com/");
   const controller = new AbortController();
@@ -147,7 +243,9 @@ async function testProxy(profileId) {
     if (!response.ok) throw new Error(`Proxy HTTP ${response.status}`);
     const payload = await response.json();
     return { ok: true, direct: false, ip: String(payload?.ip || ""), resolvedProxy: String(resolvedProxy || "") };
-  } finally { clearTimeout(timeout); }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function resolveProxyAuth(webContents) {
@@ -155,6 +253,7 @@ function resolveProxyAuth(webContents) {
   if (!ses) return null;
   const cached = proxyAuthBySession.get(ses);
   if (cached) return cached;
+
   const data = loadData();
   for (const profile of data.profiles) {
     try {
@@ -175,6 +274,7 @@ app.on("login", (event, webContents, _details, authInfo, callback) => {
 });
 
 function registerProxyIpc() {
+  ipcMain.handle("profile:prepare-network", (_event, profileId) => prepareProfileNetwork(profileId));
   ipcMain.handle("proxy:get", (_event, profileId) => {
     const data = loadData();
     const profile = getProfile(profileId, data);
@@ -196,16 +296,11 @@ function registerProxyIpc() {
   });
 }
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   installDataFileReadCache();
   registerProxyIpc();
-  const data = loadData();
-  await Promise.allSettled(data.profiles.map(async (profile) => {
-    const ses = session.fromPartition(`persist:pagebot-${profile.id}`);
-    installPerformanceFilters(ses);
-    if (!profile?.proxy?.enabled) return;
-    try { await applyProxy(profile.id, profile.proxy); }
-    catch (error) { console.error("[proxy] startup apply failed", profile.id, error instanceof Error ? error.message : error); }
-  }));
+  registerAiRuntimeIpc();
+  // Important: do not create or configure any browser profile here. A profile's
+  // session, proxy and heavy-media filter are initialized only when the user opens it.
   require("./main");
 });

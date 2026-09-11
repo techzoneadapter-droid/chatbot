@@ -1,12 +1,37 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+let initialProfiles = null;
+let startupOpenDeferred = false;
+
+async function listProfiles() {
+  const profiles = await ipcRenderer.invoke("profiles:list");
+  if (initialProfiles === null) initialProfiles = Array.isArray(profiles) ? profiles : [];
+  return profiles;
+}
+
+async function openProfile(profileId) {
+  // renderer.js opens the first saved profile automatically during startup. Return
+  // its metadata once without creating Chromium/session work. Any later user click
+  // uses the real lazy network + browser open path.
+  if (!startupOpenDeferred && Array.isArray(initialProfiles)) {
+    const existing = initialProfiles.find((profile) => profile.id === profileId);
+    if (existing) {
+      startupOpenDeferred = true;
+      return existing;
+    }
+  }
+  startupOpenDeferred = true;
+  await ipcRenderer.invoke("profile:prepare-network", profileId);
+  return ipcRenderer.invoke("profile:open", profileId);
+}
+
 contextBridge.exposeInMainWorld("pagebot", {
   profiles: {
-    list: () => ipcRenderer.invoke("profiles:list"),
+    list: listProfiles,
     create: (input) => ipcRenderer.invoke("profiles:create", input),
     update: (profileId, patch) => ipcRenderer.invoke("profiles:update", profileId, patch),
     delete: (profileId) => ipcRenderer.invoke("profiles:delete", profileId),
-    open: (profileId) => ipcRenderer.invoke("profile:open", profileId)
+    open: openProfile
   },
   browser: {
     back: () => ipcRenderer.invoke("browser:back"),
@@ -22,7 +47,9 @@ contextBridge.exposeInMainWorld("pagebot", {
   },
   ai: {
     suggest: () => ipcRenderer.invoke("ai:suggest"),
-    test: () => ipcRenderer.invoke("ai:test")
+    test: () => ipcRenderer.invoke("ai:test"),
+    models: (provider) => ipcRenderer.invoke("ai:models", provider),
+    probe: (input) => ipcRenderer.invoke("ai:probe", input)
   },
   proxy: {
     get: (profileId) => ipcRenderer.invoke("proxy:get", profileId),

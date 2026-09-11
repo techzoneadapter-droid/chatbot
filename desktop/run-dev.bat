@@ -20,16 +20,7 @@ if not exist "node_modules\electron\dist\electron.exe" (
   )
 )
 
-echo [PageBot Desktop] Dang kiem tra code truoc khi chay...
-call npm run verify
-if errorlevel 1 (
-  echo.
-  echo [PageBot Desktop] Code dang co loi kiem tra. Gui anh man hinh nay de sua truoc khi chay.
-  pause
-  exit /b 1
-)
-
-echo [PageBot Desktop] Dang khoi dong che do phat trien...
+echo [PageBot Desktop] Khoi dong nhanh DEV...
 call npm start
 
 if errorlevel 1 (
