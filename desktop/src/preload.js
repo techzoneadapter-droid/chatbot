@@ -6,7 +6,10 @@ contextBridge.exposeInMainWorld("pagebot", {
     create: (input) => ipcRenderer.invoke("profiles:create", input),
     update: (profileId, patch) => ipcRenderer.invoke("profiles:update", profileId, patch),
     delete: (profileId) => ipcRenderer.invoke("profiles:delete", profileId),
-    open: (profileId) => ipcRenderer.invoke("profile:open", profileId)
+    open: async (profileId) => {
+      await ipcRenderer.invoke("profile:prepare-network", profileId);
+      return ipcRenderer.invoke("profile:open", profileId);
+    }
   },
   browser: {
     back: () => ipcRenderer.invoke("browser:back"),
@@ -22,7 +25,9 @@ contextBridge.exposeInMainWorld("pagebot", {
   },
   ai: {
     suggest: () => ipcRenderer.invoke("ai:suggest"),
-    test: () => ipcRenderer.invoke("ai:test")
+    test: () => ipcRenderer.invoke("ai:test"),
+    models: (provider) => ipcRenderer.invoke("ai:models", provider),
+    probe: (input) => ipcRenderer.invoke("ai:probe", input)
   },
   proxy: {
     get: (profileId) => ipcRenderer.invoke("proxy:get", profileId),
