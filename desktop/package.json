@@ -2,12 +2,12 @@
   "name": "pagebot-desktop",
   "version": "0.1.0-dev",
   "description": "Multi-profile Facebook browser with local AI chat assistant",
-  "main": "src/main.js",
+  "main": "src/bootstrap.js",
   "author": "techzoneadapter-droid",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/profile-inline.js && node --check src/browser-utils.js",
+    "check": "node --check src/bootstrap.js && node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/profile-inline.js && node --check src/proxy-panel.js && node --check src/browser-utils.js",
     "test": "node --test test/*.test.js",
     "verify": "npm run check && npm test",
     "dist": "electron-builder --win nsis"
