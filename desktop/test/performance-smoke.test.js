@@ -20,3 +20,13 @@ test("Electron entry disables WebAuthn OS prompts before bootstrap", () => {
   assert.match(source, /WebAuthenticationConditionalUI/);
   assert.match(source, /require\("\.\/bootstrap"\)/);
 });
+
+test("Electron entry retries transient Gemini and Meta API failures", () => {
+  const source = fs.readFileSync(path.join(root, "src", "entry.js"), "utf8");
+  assert.match(source, /RETRYABLE_AI_STATUS/);
+  assert.match(source, /429/);
+  assert.match(source, /503/);
+  assert.match(source, /MAX_AI_ATTEMPTS = 3/);
+  assert.match(source, /generativelanguage\.googleapis\.com/);
+  assert.match(source, /api\.meta\.ai/);
+});
