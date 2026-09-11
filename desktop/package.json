@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/browser-utils.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/profile-inline.js && node --check src/browser-utils.js",
     "test": "node --test test/*.test.js",
     "verify": "npm run check && npm test",
     "dist": "electron-builder --win nsis"
