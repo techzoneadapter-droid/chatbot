@@ -10,6 +10,29 @@ app.commandLine.appendSwitch(
   "WebAuthentication,WebAuthenticationConditionalUI"
 );
 
+// HTTP/SOCKS profiles are more predictable when Chromium does not try QUIC/UDP
+// first. This avoids a noticeable failed-transport pause on some residential
+// proxies before Facebook falls back to TCP/TLS.
+app.commandLine.appendSwitch("disable-quic");
+
+// Avoid the black DEV window while the renderer is still loading. The real app
+// window gets a light background immediately and is revealed when its renderer
+// is ready (with a safety timeout in case ready-to-show is not emitted).
+app.on("browser-window-created", (_event, window) => {
+  try {
+    window.setBackgroundColor("#f7f9fc");
+    window.hide();
+    let shown = false;
+    const reveal = () => {
+      if (shown || window.isDestroyed()) return;
+      shown = true;
+      window.show();
+    };
+    window.once("ready-to-show", reveal);
+    setTimeout(reveal, 2200).unref?.();
+  } catch {}
+});
+
 // AI providers can briefly return 429/5xx while a model is overloaded. Keep this
 // retry layer at the process entry point so both manual replies and Auto Chat get
 // the same resilience without duplicating logic in each provider client.
