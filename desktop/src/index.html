@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PageBot Desktop DEV</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="proxy.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -62,7 +63,7 @@
         <div class="workspace-icon">PB</div>
         <h1>PageBot Desktop</h1>
         <p>Tạo một profile trình duyệt ở bên trái để mở Facebook ngay trong ứng dụng.</p>
-        <span>Mỗi profile sẽ giữ riêng tài khoản đăng nhập, dữ liệu AI và trạng thái Auto Chat.</span>
+        <span>Mỗi profile sẽ giữ riêng tài khoản đăng nhập, proxy, dữ liệu AI và trạng thái Auto Chat.</span>
       </div>
     </main>
 
@@ -72,11 +73,6 @@
           <span class="eyebrow">TRỢ LÝ AI</span>
           <h2 id="active-profile-name">Chưa mở profile</h2>
         </div>
-        <label class="switch-wrap" title="Chỉ tự động trả lời hội thoại đang mở">
-          <input id="auto-reply" type="checkbox" />
-          <span class="switch"></span>
-          <b>Auto</b>
-        </label>
       </div>
 
       <div class="panel-scroll">
@@ -108,6 +104,54 @@
           </div>
         </section>
 
+        <section class="card compact" id="proxy-card">
+          <div class="section-head">
+            <div>
+              <strong>Proxy riêng của profile</strong>
+              <small>Mỗi profile dùng cấu hình mạng độc lập</small>
+            </div>
+            <span id="proxy-status" class="status-badge ok">Kết nối trực tiếp</span>
+          </div>
+          <label class="switch-wrap proxy-switch">
+            <input id="proxy-enabled" type="checkbox" />
+            <span class="switch"></span>
+            <b>Dùng proxy</b>
+          </label>
+          <div class="two-col proxy-grid-top">
+            <label>
+              <span>Loại</span>
+              <select id="proxy-type">
+                <option value="http">HTTP/HTTPS</option>
+                <option value="socks5">SOCKS5</option>
+              </select>
+            </label>
+            <label>
+              <span>Port</span>
+              <input id="proxy-port" inputmode="numeric" placeholder="8080" />
+            </label>
+          </div>
+          <label>
+            <span>Host / IP</span>
+            <input id="proxy-host" autocomplete="off" placeholder="127.0.0.1 hoặc proxy.example.com" />
+          </label>
+          <div class="two-col">
+            <label>
+              <span>Username</span>
+              <input id="proxy-username" autocomplete="off" placeholder="Nếu proxy có tài khoản" />
+            </label>
+            <label>
+              <span>Password</span>
+              <input id="proxy-password" type="password" autocomplete="new-password" placeholder="Nếu proxy có mật khẩu" />
+            </label>
+          </div>
+          <div class="button-row">
+            <button id="save-proxy" class="secondary">Lưu & áp dụng</button>
+            <button id="test-proxy" class="ghost">Kiểm tra proxy</button>
+            <button id="disable-proxy" class="ghost danger">Tắt proxy</button>
+          </div>
+          <div id="proxy-result" class="diagnostics muted proxy-result">Profile này hiện không dùng proxy.</div>
+        </section>
+
         <section class="card">
           <label>
             <span>Dữ liệu sản phẩm / giá / FAQ của profile này</span>
@@ -124,12 +168,19 @@
         </section>
 
         <section class="card">
-          <div class="section-head">
+          <div class="section-head chat-head">
             <div>
               <strong>Hội thoại đang mở</strong>
-              <small>AI chỉ thao tác cuộc chat đang hiển thị</small>
+              <small>Test cách AI trả lời trước, sau đó mới bật Auto nhắn tin</small>
             </div>
-            <button id="inspect-chat" class="icon-button" title="Kiểm tra đọc hội thoại">◎</button>
+            <div class="chat-head-actions">
+              <label class="switch-wrap auto-chat-switch" title="Chỉ tự động trả lời hội thoại đang mở">
+                <input id="auto-reply" type="checkbox" />
+                <span class="switch"></span>
+                <b>Auto nhắn tin</b>
+              </label>
+              <button id="inspect-chat" class="icon-button" title="Kiểm tra đọc hội thoại">◎</button>
+            </div>
           </div>
           <div id="chat-diagnostics" class="diagnostics muted">Chưa kiểm tra hội thoại.</div>
           <button id="suggest-reply" class="primary full">AI soạn câu trả lời</button>
@@ -151,7 +202,7 @@
         </section>
 
         <div class="safety-note">
-          Auto Chat chỉ chạy trên Business Suite Inbox hoặc Messenger của profile đang mở. Khi vừa bật, app chỉ lấy hội thoại hiện tại làm mốc và không tự trả lời lại tin cũ.
+          Auto Chat mặc định tắt. Chỉ bật sau khi bạn đã kiểm tra AI soạn và gửi thủ công ổn. Auto chỉ phản hồi tin mới của hội thoại đang mở và vẫn giữ giới hạn tốc độ hiện tại.
         </div>
       </div>
     </aside>
@@ -164,5 +215,6 @@
 
   <script src="renderer.js"></script>
   <script src="profile-inline.js"></script>
+  <script src="proxy-panel.js"></script>
 </body>
 </html>

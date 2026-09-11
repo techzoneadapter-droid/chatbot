@@ -24,6 +24,12 @@ contextBridge.exposeInMainWorld("pagebot", {
     suggest: () => ipcRenderer.invoke("ai:suggest"),
     test: () => ipcRenderer.invoke("ai:test")
   },
+  proxy: {
+    get: (profileId) => ipcRenderer.invoke("proxy:get", profileId),
+    save: (profileId, config) => ipcRenderer.invoke("proxy:save", profileId, config),
+    test: (profileId) => ipcRenderer.invoke("proxy:test", profileId),
+    disable: (profileId) => ipcRenderer.invoke("proxy:disable", profileId)
+  },
   secrets: {
     status: () => ipcRenderer.invoke("secrets:status"),
     set: (provider, apiKey) => ipcRenderer.invoke("secrets:set", provider, apiKey),
