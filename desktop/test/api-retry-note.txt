@@ -1,1 +1,0 @@
-Transient AI API statuses retried by desktop entry: 429, 500, 502, 503, 504. Total attempts: 3.
