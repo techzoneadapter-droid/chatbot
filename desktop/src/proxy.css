@@ -1,0 +1,41 @@
+.proxy-switch {
+  margin: 3px 0 10px;
+}
+
+.proxy-grid-top {
+  margin-bottom: 8px;
+}
+
+.proxy-result {
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
+.chat-head {
+  align-items: center;
+}
+
+.chat-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auto-chat-switch {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  white-space: nowrap;
+}
+
+@media (max-width: 1280px) {
+  .chat-head {
+    align-items: flex-start;
+  }
+
+  .chat-head-actions {
+    flex-direction: column-reverse;
+    align-items: flex-end;
+  }
+}
