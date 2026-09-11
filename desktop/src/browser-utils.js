@@ -1,12 +1,21 @@
 const crypto = require("node:crypto");
 
 const DEFAULT_START_URL = "https://business.facebook.com/latest/inbox";
+const DEFAULT_SEARCH_URL = "https://www.google.com/search?q=";
 
 function normalizeUrl(value) {
   const trimmed = String(value || "").trim();
   if (!trimmed) return DEFAULT_START_URL;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
+
+  const looksLikeLocalhost = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#].*)?$/i.test(trimmed);
+  const looksLikeHost = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:[/?#].*)?$/i.test(trimmed);
+  const looksLikeIpv4 = /^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:[/?#].*)?$/.test(trimmed);
+  if (!/\s/.test(trimmed) && (looksLikeLocalhost || looksLikeHost || looksLikeIpv4)) {
+    return `https://${trimmed}`;
+  }
+
+  return `${DEFAULT_SEARCH_URL}${encodeURIComponent(trimmed)}`;
 }
 
 function isSupportedChatUrl(value) {
@@ -49,6 +58,7 @@ function boundedText(value, max = 2000) {
 
 module.exports = {
   DEFAULT_START_URL,
+  DEFAULT_SEARCH_URL,
   normalizeUrl,
   isSupportedChatUrl,
   cleanUserAgent,
