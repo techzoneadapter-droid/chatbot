@@ -17,7 +17,26 @@
           <span>DEV · Facebook + AI</span>
         </div>
       </div>
+
       <button id="new-profile" class="primary full">+ Tạo profile trình duyệt</button>
+
+      <form id="profile-form" class="create-profile-panel hidden">
+        <div class="create-title">
+          <strong>Profile mới</strong>
+          <button id="cancel-profile" type="button" class="mini-close" title="Đóng">×</button>
+        </div>
+        <label>
+          <span>Tên profile</span>
+          <input id="profile-name" name="name" required placeholder="Ví dụ: FB Bao / Page TNANO" />
+        </label>
+        <label>
+          <span>Trang khởi động</span>
+          <input name="startUrl" value="https://business.facebook.com/latest/inbox" />
+        </label>
+        <p class="help">Mỗi profile giữ cookie và phiên đăng nhập Facebook riêng.</p>
+        <button id="create-profile-submit" type="submit" class="primary full">Tạo và mở ngay</button>
+      </form>
+
       <div class="section-title">Profiles</div>
       <div id="profiles" class="profiles"></div>
       <div class="sidebar-note">
@@ -37,6 +56,15 @@
       </form>
       <div id="browser-loading" class="browser-loading"></div>
     </header>
+
+    <main class="workspace-empty">
+      <div class="workspace-empty-card">
+        <div class="workspace-icon">PB</div>
+        <h1>PageBot Desktop</h1>
+        <p>Tạo một profile trình duyệt ở bên trái để mở Facebook ngay trong ứng dụng.</p>
+        <span>Mỗi profile sẽ giữ riêng tài khoản đăng nhập, dữ liệu AI và trạng thái Auto Chat.</span>
+      </div>
+    </main>
 
     <aside class="ai-panel">
       <div class="ai-header">
@@ -128,30 +156,6 @@
       </div>
     </aside>
   </div>
-
-  <dialog id="profile-dialog" class="dialog">
-    <form id="profile-form" method="dialog">
-      <div class="dialog-head">
-        <div>
-          <span class="eyebrow">PROFILE MỚI</span>
-          <h3>Tạo trình duyệt riêng</h3>
-        </div>
-      </div>
-      <label>
-        <span>Tên profile</span>
-        <input name="name" required placeholder="Ví dụ: FB Bao / Page TNANO" />
-      </label>
-      <label>
-        <span>Trang khởi động</span>
-        <input name="startUrl" value="https://business.facebook.com/latest/inbox" />
-      </label>
-      <p class="help">Sau khi tạo, Facebook sẽ mở ngay trong màn hình chính. Đăng nhập bình thường; phiên đăng nhập được lưu riêng cho profile này.</p>
-      <div class="dialog-actions">
-        <button id="cancel-profile" type="button" class="ghost">Hủy</button>
-        <button type="submit" class="primary">Tạo và mở</button>
-      </div>
-    </form>
-  </dialog>
 
   <div id="busy" class="busy">
     <div class="spinner"></div>
