@@ -6,11 +6,14 @@
     const script = document.createElement("script");
     script.src = src;
     script.setAttribute(dataKey, dataValue);
-    script.defer = true;
+    script.async = false;
     document.body.appendChild(script);
   }
 
   function loadAiHelpers() {
+    // The control center establishes the selected Auto Chat engine first. The
+    // actual Auto helpers stay dormant until the user explicitly enables one.
+    loadScriptOnce("control-center.js", "data-pagebot-control-center", "1");
     loadScriptOnce("ai-chat-focus.js", "data-pagebot-ai-chat-focus", "1");
     loadScriptOnce("auto-chat-current.js", "data-pagebot-auto-chat-current", "1");
   }
