@@ -16,6 +16,11 @@ test("startup keeps proxy and Auto Chat off until the user enables them", () => 
   assert.match(entry, /resetManualRuntimeSwitches/);
 });
 
+test("fresh app runs start profiles from configured home page instead of restoring old diagnostic pages", () => {
+  const entry = read("src/entry.js");
+  assert.match(entry, /profile\.lastUrl = profile\.startUrl/);
+});
+
 test("proxy UI is event-driven instead of polling in the background", () => {
   const source = read("src/proxy-panel.js");
   assert.doesNotMatch(source, /setInterval\s*\(/);
