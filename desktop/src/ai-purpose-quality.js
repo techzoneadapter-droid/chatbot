@@ -2,9 +2,9 @@
   const q = (selector) => document.querySelector(selector);
   const PURPOSES = {
     consult: "Ưu tiên hiểu đúng nhu cầu và tư vấn chính xác trước khi chuyển sang bước tiếp theo.",
-    zalo: "Khi phù hợp, hướng cuộc trò chuyện sang Zalo để tiếp tục tư vấn; không nhắc lặp nếu khách chưa muốn.",
+    zalo: "Khi phù hợp, xin số điện thoại hoặc Zalo để tiếp tục tư vấn; không hỏi lặp nếu khách đã cung cấp hoặc chưa muốn.",
     close: "Khi đã đủ thông tin, hướng cuộc trò chuyện tới bước chốt đơn tự nhiên; không gây áp lực.",
-    "zalo-close": "Khi phù hợp, chuyển cuộc trò chuyện sang Zalo rồi hướng tới bước chốt đơn."
+    "zalo-close": "Khi phù hợp, xin số điện thoại/Zalo rồi hướng tới bước chốt đơn; không hỏi lại dữ liệu khách đã cung cấp."
   };
 
   function purposeFromPrompt(prompt) {
@@ -14,7 +14,7 @@
 
   function qualityBlock(value) {
     const purpose = PURPOSES[value] || PURPOSES.consult;
-    return `[PAGEBOT_QUALITY]\n[PAGEBOT_PURPOSE:${value}]\n${purpose}\nMỗi lượt chỉ tạo một phản hồi hoàn chỉnh.\nKhông lặp lại nguyên câu hoặc cùng một ý vừa gửi.\nĐọc lịch sử trước khi hỏi và tránh hỏi lại điều khách đã trả lời.\nNếu khách gửi nhiều tin ngắn liên tiếp, hiểu chúng như cùng một lượt và trả lời gộp.\n[/PAGEBOT_QUALITY]`;
+    return `[PAGEBOT_QUALITY]\n[PAGEBOT_PURPOSE:${value}]\n${purpose}\nMỗi lượt chỉ tạo một phản hồi hoàn chỉnh, không bỏ dở giữa câu.\nKhông lặp lại nguyên câu hoặc cùng một ý vừa gửi.\nĐọc lịch sử trước khi hỏi và tránh hỏi lại điều khách đã trả lời.\nNếu khách gửi nhiều tin ngắn liên tiếp, hiểu chúng như cùng một lượt và trả lời gộp.\nKhông chào hỏi hoặc xin lỗi lặp lại nếu cuộc trò chuyện đã bắt đầu.\n[/PAGEBOT_QUALITY]`;
   }
 
   async function applyQuality() {
@@ -32,7 +32,7 @@
     if (!grid || q("#ai-purpose")) return false;
     const label = document.createElement("label");
     label.style.gridColumn = "1 / -1";
-    label.innerHTML = '<span>Mục đích hội thoại</span><select id="ai-purpose"><option value="consult">Tư vấn đúng nhu cầu</option><option value="zalo">Chuyển sang Zalo</option><option value="close">Chốt đơn</option><option value="zalo-close">Zalo rồi chốt đơn</option></select>';
+    label.innerHTML = '<span>Mục đích hội thoại</span><select id="ai-purpose"><option value="consult">Tư vấn đúng nhu cầu</option><option value="zalo">Xin SĐT để kết bạn Zalo</option><option value="close">Chốt đơn</option><option value="zalo-close">Xin SĐT/Zalo rồi chốt đơn</option></select>';
     grid.appendChild(label);
     const select = q("#ai-purpose");
     select.value = purposeFromPrompt(q("#system-prompt")?.value || state?.activeProfile?.systemPrompt || "");
