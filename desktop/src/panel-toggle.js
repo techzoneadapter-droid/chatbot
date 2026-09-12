@@ -1,6 +1,15 @@
 (() => {
   let collapsed = false;
 
+  function loadAiChatFocus() {
+    if (document.querySelector('script[data-pagebot-ai-chat-focus]')) return;
+    const script = document.createElement("script");
+    script.src = "ai-chat-focus.js";
+    script.dataset.pagebotAiChatFocus = "1";
+    script.defer = true;
+    document.body.appendChild(script);
+  }
+
   async function setCollapsed(next) {
     collapsed = Boolean(next);
     document.body.classList.toggle("ai-panel-collapsed", collapsed);
@@ -17,6 +26,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
+    loadAiChatFocus();
     const button = document.getElementById("toggle-ai-panel");
     if (!button) return;
     button.addEventListener("click", () => void setCollapsed(!collapsed));
