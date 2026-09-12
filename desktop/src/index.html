@@ -7,6 +7,7 @@
   <title>PageBot Desktop DEV</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="proxy.css" />
+  <link rel="stylesheet" href="panel-toggle.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -73,6 +74,7 @@
           <span class="eyebrow">TRỢ LÝ AI</span>
           <h2 id="active-profile-name">Chưa mở profile</h2>
         </div>
+        <button id="toggle-ai-panel" class="panel-toggle-button" type="button" title="Thu gọn trợ lý AI" aria-label="Thu gọn trợ lý AI" aria-expanded="true">›</button>
       </div>
 
       <div class="panel-scroll">
@@ -152,6 +154,35 @@
           <div id="proxy-result" class="diagnostics muted proxy-result">Profile này hiện không dùng proxy.</div>
         </section>
 
+        <section class="card compact" id="facebook-login-card">
+          <div class="section-head">
+            <div>
+              <strong>Đăng nhập Facebook của profile</strong>
+              <small>Lưu riêng tài khoản + mật khẩu cho từng profile</small>
+            </div>
+            <span id="fb-login-status" class="status-badge warn">Chưa mở profile</span>
+          </div>
+          <label>
+            <span>Tài khoản Facebook</span>
+            <input id="fb-login-account" autocomplete="username" placeholder="Email hoặc số điện thoại" />
+          </label>
+          <label>
+            <span>Mật khẩu</span>
+            <input id="fb-login-password" type="password" autocomplete="current-password" placeholder="Mật khẩu Facebook" />
+          </label>
+          <label>
+            <span>Mã 2FA hiện tại (nếu Facebook đang hỏi)</span>
+            <input id="fb-login-2fa" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" />
+          </label>
+          <p class="facebook-login-note">Tài khoản + mật khẩu được mã hóa bằng Windows secure storage. Mã 2FA chỉ dùng cho lần bấm Đăng nhập hiện tại và không được lưu.</p>
+          <div class="facebook-login-actions">
+            <button id="save-fb-login" class="secondary">Lưu đăng nhập</button>
+            <button id="run-fb-login" class="primary">Đăng nhập</button>
+            <button id="clear-fb-login" class="ghost danger">Xóa đã lưu</button>
+          </div>
+          <div id="fb-login-result" class="diagnostics muted">Mở một profile để cấu hình đăng nhập Facebook.</div>
+        </section>
+
         <section class="card">
           <label>
             <span>Dữ liệu sản phẩm / giá / FAQ của profile này</span>
@@ -217,6 +248,8 @@
   <script src="renderer.js"></script>
   <script src="profile-inline.js"></script>
   <script src="proxy-panel.js"></script>
+  <script src="profile-login.js"></script>
   <script src="ai-options.js"></script>
+  <script src="panel-toggle.js"></script>
 </body>
 </html>
