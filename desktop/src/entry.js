@@ -29,6 +29,12 @@ function resetManualRuntimeSwitches() {
         profile.autoReply = false;
         changed = true;
       }
+      // Do not restore a diagnostic or random page from the previous session.
+      // Every fresh app run starts the profile from its configured home page.
+      if (profile?.startUrl && profile?.lastUrl && profile.lastUrl !== profile.startUrl) {
+        profile.lastUrl = profile.startUrl;
+        changed = true;
+      }
     }
     if (changed) fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
   } catch {}
