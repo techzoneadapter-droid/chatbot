@@ -100,3 +100,4 @@ if (nativeFetch) {
 }
 
 require("./bootstrap");
+require("./profile-login-runtime");
