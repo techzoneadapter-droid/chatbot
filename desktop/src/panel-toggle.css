@@ -1,0 +1,80 @@
+.ai-panel,
+.browser-bar,
+.workspace-empty {
+  transition: width .18s ease, right .18s ease, transform .18s ease;
+}
+
+.ai-header {
+  position: relative;
+}
+
+.panel-toggle-button {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dce3ec;
+  border-radius: 9px;
+  background: #f7f9fc;
+  color: #536178;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.panel-toggle-button:hover {
+  background: #edf2f7;
+}
+
+body.ai-panel-collapsed .ai-panel {
+  width: 46px;
+  overflow: hidden;
+}
+
+body.ai-panel-collapsed .browser-bar,
+body.ai-panel-collapsed .workspace-empty {
+  right: 46px;
+}
+
+body.ai-panel-collapsed .ai-header {
+  min-height: 54px;
+  padding: 10px 7px;
+  justify-content: center;
+}
+
+body.ai-panel-collapsed .ai-header > div {
+  display: none;
+}
+
+body.ai-panel-collapsed .panel-scroll {
+  display: none;
+}
+
+body.ai-panel-collapsed .panel-toggle-button {
+  transform: rotate(180deg);
+}
+
+.facebook-login-note {
+  margin-top: 7px;
+  color: #7c8799;
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+.facebook-login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.facebook-login-actions .primary,
+.facebook-login-actions .secondary,
+.facebook-login-actions .ghost {
+  flex: 1 1 auto;
+}
+
+#fb-login-2fa {
+  letter-spacing: .08em;
+}
