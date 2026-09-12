@@ -1,27 +1,45 @@
 const { app } = require("electron");
+const fs = require("node:fs");
+const path = require("node:path");
 
 app.commandLine.appendSwitch(
   "disable-features",
   "WebAuthentication,WebAuthenticationConditionalUI"
 );
 
+// Show the shell immediately. Do not hide the window while waiting for browser
+// or network work: those features are now demand-driven.
 app.on("browser-window-created", (_event, window) => {
-  try {
-    window.setBackgroundColor("#f7f9fc");
-    window.hide();
-    let shown = false;
-    const reveal = () => {
-      if (shown || window.isDestroyed()) return;
-      shown = true;
-      window.show();
-    };
-    window.once("ready-to-show", reveal);
-    setTimeout(reveal, 1200).unref?.();
-  } catch {}
+  try { window.setBackgroundColor("#f7f9fc"); } catch {}
 });
 
+function resetManualRuntimeSwitches() {
+  try {
+    const file = path.join(app.getPath("userData"), "pagebot-data.json");
+    if (!fs.existsSync(file)) return;
+    const data = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (!Array.isArray(data?.profiles)) return;
+    let changed = false;
+    for (const profile of data.profiles) {
+      if (profile?.proxy?.enabled) {
+        profile.proxy.enabled = false;
+        changed = true;
+      }
+      if (profile?.autoReply) {
+        profile.autoReply = false;
+        changed = true;
+      }
+    }
+    if (changed) fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
+  } catch {}
+}
+
+// Register this before bootstrap's whenReady callback so saved proxy/Auto flags
+// are reset before any profile can be opened.
+app.whenReady().then(resetManualRuntimeSwitches);
+
 // This wrapper is dormant until an AI request is actually made. It adds retry
-// only for transient provider errors and does not perform any startup network work.
+// only for transient provider errors and does not perform startup network work.
 const nativeFetch = globalThis.fetch?.bind(globalThis);
 const RETRYABLE_AI_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_AI_ATTEMPTS = 3;
