@@ -1,4 +1,4 @@
-const { app, ipcMain, session, safeStorage } = require("electron");
+const { app, BrowserWindow, ipcMain, session, safeStorage, webContents } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { registerAiRuntimeIpc } = require("./ai-runtime");
@@ -10,6 +10,11 @@ app.commandLine.appendSwitch("disable-smooth-scrolling");
 const proxyAuthBySession = new WeakMap();
 const appliedProxySignatures = new Map();
 const performanceConfiguredSessions = new WeakSet();
+const AI_PANEL_OPEN_WIDTH = 360;
+const AI_PANEL_COLLAPSED_WIDTH = 46;
+const SIDEBAR_WIDTH = 260;
+const TOPBAR_HEIGHT = 54;
+let aiPanelCollapsed = false;
 
 function dataFile() {
   return path.join(app.getPath("userData"), "pagebot-data.json");
@@ -106,6 +111,10 @@ function decryptSecret(value) {
 
 function proxySecretKey(profileId) {
   return `proxy:${profileId}`;
+}
+
+function facebookLoginSecretKey(profileId) {
+  return `facebook-login:${profileId}`;
 }
 
 function normalizeProxy(input = {}) {
@@ -248,8 +257,8 @@ async function testProxy(profileId) {
   }
 }
 
-function resolveProxyAuth(webContents) {
-  const ses = webContents?.session;
+function resolveProxyAuth(contents) {
+  const ses = contents?.session;
   if (!ses) return null;
   const cached = proxyAuthBySession.get(ses);
   if (cached) return cached;
@@ -265,12 +274,198 @@ function resolveProxyAuth(webContents) {
   return null;
 }
 
-app.on("login", (event, webContents, _details, authInfo, callback) => {
-  if (!authInfo?.isProxy || !webContents) return;
-  const auth = resolveProxyAuth(webContents);
+app.on("login", (event, contents, _details, authInfo, callback) => {
+  if (!authInfo?.isProxy || !contents) return;
+  const auth = resolveProxyAuth(contents);
   if (!auth?.username) return;
   event.preventDefault();
   callback(auth.username, auth.password || "");
+});
+
+function readFacebookLogin(profileId, data = loadData()) {
+  const encrypted = data.secrets?.[facebookLoginSecretKey(profileId)];
+  if (!encrypted) return { account: "", password: "" };
+  try {
+    const parsed = JSON.parse(decryptSecret(encrypted) || "{}");
+    return {
+      account: String(parsed?.account || "").trim().slice(0, 320),
+      password: String(parsed?.password || "").slice(0, 512)
+    };
+  } catch {
+    return { account: "", password: "" };
+  }
+}
+
+function publicFacebookLogin(profileId, data = loadData()) {
+  const saved = readFacebookLogin(profileId, data);
+  return {
+    account: saved.account,
+    hasPassword: Boolean(saved.password),
+    secureStorage: safeStorage.isEncryptionAvailable()
+  };
+}
+
+function saveFacebookLogin(profileId, input = {}) {
+  const data = loadData();
+  if (!getProfile(profileId, data)) throw new Error("Profile không tồn tại.");
+  const current = readFacebookLogin(profileId, data);
+  const account = typeof input.account === "string" ? input.account.trim().slice(0, 320) : current.account;
+  const password = typeof input.password === "string" && input.password.length ? input.password.slice(0, 512) : current.password;
+  if (!account) throw new Error("Hãy nhập tài khoản Facebook.");
+  if (!password) throw new Error("Hãy nhập mật khẩu Facebook.");
+  data.secrets[facebookLoginSecretKey(profileId)] = encryptSecret(JSON.stringify({ account, password }));
+  saveData(data);
+  return publicFacebookLogin(profileId, data);
+}
+
+function clearFacebookLogin(profileId) {
+  const data = loadData();
+  delete data.secrets[facebookLoginSecretKey(profileId)];
+  saveData(data);
+  return true;
+}
+
+function findProfileWebContents(profileId) {
+  const targetSession = session.fromPartition(`persist:pagebot-${profileId}`);
+  return webContents.getAllWebContents().find((contents) => {
+    try {
+      return !contents.isDestroyed() && contents.session === targetSession && contents.getType() !== "window";
+    } catch {
+      return false;
+    }
+  }) || null;
+}
+
+function facebookLoginScript(account, password, twoFactorCode) {
+  return `(() => {
+    const account = ${JSON.stringify(account)};
+    const password = ${JSON.stringify(password)};
+    const code = ${JSON.stringify(twoFactorCode)};
+    const visible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const s = getComputedStyle(el);
+      return r.width > 4 && r.height > 4 && s.display !== 'none' && s.visibility !== 'hidden';
+    };
+    const setValue = (el, value) => {
+      if (!el) return;
+      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(el, value); else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    const clickSubmit = (keywords) => {
+      const buttons = Array.from(document.querySelectorAll('button, input[type="submit"], [role="button"]')).filter(visible);
+      const hit = buttons.find((el) => {
+        const label = [el.innerText, el.value, el.getAttribute('aria-label'), el.getAttribute('title')].filter(Boolean).join(' ');
+        return keywords.test(label);
+      }) || buttons.find((el) => el.tagName === 'INPUT' && el.type === 'submit');
+      if (hit) { hit.click(); return true; }
+      return false;
+    };
+
+    const otp = Array.from(document.querySelectorAll('input[autocomplete="one-time-code"], input[name="approvals_code"], input[name="code"], input[inputmode="numeric"]'))
+      .find(visible);
+    if (otp) {
+      if (!code) return { stage: 'two_factor_required', url: location.href };
+      setValue(otp, code);
+      clickSubmit(/continue|tiếp tục|submit|xác nhận|confirm|login|đăng nhập/i);
+      return { stage: 'two_factor_submitted', url: location.href };
+    }
+
+    const email = Array.from(document.querySelectorAll('input[name="email"], input#email, input[type="email"], input[autocomplete="username"]')).find(visible);
+    const pass = Array.from(document.querySelectorAll('input[name="pass"], input#pass, input[type="password"], input[autocomplete="current-password"]')).find(visible);
+    if (email && pass) {
+      setValue(email, account);
+      setValue(pass, password);
+      clickSubmit(/log in|login|đăng nhập|continue|tiếp tục/i);
+      return { stage: 'credentials_submitted', url: location.href };
+    }
+
+    if (/facebook\.com$/i.test(location.hostname) || /\.facebook\.com$/i.test(location.hostname)) {
+      return { stage: 'no_login_form', url: location.href };
+    }
+    return { stage: 'manual_required', url: location.href };
+  })()`;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runFacebookLogin(profileId, input = {}) {
+  const data = loadData();
+  if (!getProfile(profileId, data)) throw new Error("Profile không tồn tại.");
+  const contents = findProfileWebContents(profileId);
+  if (!contents) throw new Error("Hãy mở profile này trước khi đăng nhập.");
+
+  const saved = readFacebookLogin(profileId, data);
+  const account = String(input.account || saved.account || "").trim().slice(0, 320);
+  const password = String(input.password || saved.password || "").slice(0, 512);
+  const twoFactorCode = String(input.twoFactorCode || "").replace(/\s+/g, "").slice(0, 16);
+  if (!account) throw new Error("Hãy nhập tài khoản Facebook.");
+  if (!password) throw new Error("Hãy nhập mật khẩu Facebook.");
+
+  const currentUrl = String(contents.getURL() || "");
+  if (!/facebook\.com/i.test(currentUrl)) {
+    await contents.loadURL("https://www.facebook.com/login/");
+  }
+
+  let result = await contents.executeJavaScript(facebookLoginScript(account, password, twoFactorCode), true);
+  if (result?.stage === "credentials_submitted") {
+    await wait(2600);
+    if (contents.isDestroyed()) throw new Error("Cửa sổ profile đã đóng.");
+    result = await contents.executeJavaScript(facebookLoginScript(account, password, twoFactorCode), true);
+  } else if (result?.stage === "no_login_form" && /login|checkpoint|two_step|two-factor/i.test(String(contents.getURL() || ""))) {
+    await wait(900);
+    result = await contents.executeJavaScript(facebookLoginScript(account, password, twoFactorCode), true);
+  }
+
+  return {
+    ok: true,
+    stage: result?.stage || "manual_required",
+    requiresTwoFactor: result?.stage === "two_factor_required",
+    url: String(contents.getURL() || result?.url || "")
+  };
+}
+
+function findEmbeddedBrowserView(win) {
+  try {
+    const children = Array.isArray(win?.contentView?.children) ? win.contentView.children : [];
+    return children.find((child) => child?.webContents && !child.webContents.isDestroyed()) || null;
+  } catch {
+    return null;
+  }
+}
+
+function applyAiPanelLayout(win) {
+  if (!win || win.isDestroyed()) return false;
+  const view = findEmbeddedBrowserView(win);
+  if (!view) return false;
+  const [width, height] = win.getContentSize();
+  const panelWidth = aiPanelCollapsed ? AI_PANEL_COLLAPSED_WIDTH : AI_PANEL_OPEN_WIDTH;
+  try {
+    view.setBounds({
+      x: SIDEBAR_WIDTH,
+      y: TOPBAR_HEIGHT,
+      width: Math.max(320, width - SIDEBAR_WIDTH - panelWidth),
+      height: Math.max(300, height - TOPBAR_HEIGHT)
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function scheduleAiPanelLayout(win) {
+  setTimeout(() => applyAiPanelLayout(win), 0);
+}
+
+app.on("browser-window-created", (_event, win) => {
+  win.on("resize", () => {
+    if (aiPanelCollapsed) scheduleAiPanelLayout(win);
+  });
 });
 
 function registerProxyIpc() {
@@ -296,9 +491,27 @@ function registerProxyIpc() {
   });
 }
 
+function registerProfileLoginIpc() {
+  ipcMain.handle("profile-login:get", (_event, profileId) => {
+    const data = loadData();
+    if (!getProfile(profileId, data)) throw new Error("Profile không tồn tại.");
+    return publicFacebookLogin(profileId, data);
+  });
+  ipcMain.handle("profile-login:save", (_event, profileId, input) => saveFacebookLogin(profileId, input || {}));
+  ipcMain.handle("profile-login:clear", (_event, profileId) => clearFacebookLogin(profileId));
+  ipcMain.handle("profile-login:run", (_event, profileId, input) => runFacebookLogin(profileId, input || {}));
+  ipcMain.handle("layout:set-ai-panel-collapsed", (_event, collapsed) => {
+    aiPanelCollapsed = Boolean(collapsed);
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
+    if (win) scheduleAiPanelLayout(win);
+    return { collapsed: aiPanelCollapsed, panelWidth: aiPanelCollapsed ? AI_PANEL_COLLAPSED_WIDTH : AI_PANEL_OPEN_WIDTH };
+  });
+}
+
 app.whenReady().then(() => {
   installDataFileReadCache();
   registerProxyIpc();
+  registerProfileLoginIpc();
   registerAiRuntimeIpc();
   // Important: do not create or configure any browser profile here. A profile's
   // session, proxy and heavy-media filter are initialized only when the user opens it.
