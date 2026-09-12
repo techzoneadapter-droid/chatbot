@@ -29,6 +29,12 @@ function resetManualRuntimeSwitches() {
         profile.autoReply = false;
         changed = true;
       }
+      // Do not restore a diagnostic or random page from the previous session.
+      // Every fresh app run starts the profile from its configured home page.
+      if (profile?.startUrl && profile?.lastUrl && profile.lastUrl !== profile.startUrl) {
+        profile.lastUrl = profile.startUrl;
+        changed = true;
+      }
     }
     if (changed) fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
   } catch {}
@@ -39,7 +45,7 @@ function resetManualRuntimeSwitches() {
 app.whenReady().then(resetManualRuntimeSwitches);
 
 // This wrapper is dormant until an AI request is actually made. It adds retry
-// only for transient provider errors and does not perform startup network work.
+// only for transient provider errors and does not perform any startup network work.
 const nativeFetch = globalThis.fetch?.bind(globalThis);
 const RETRYABLE_AI_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_AI_ATTEMPTS = 3;
