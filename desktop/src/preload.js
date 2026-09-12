@@ -49,6 +49,10 @@ contextBridge.exposeInMainWorld("pagebot", {
     clear: (profileId) => ipcRenderer.invoke("profile-login:clear", profileId),
     run: (profileId, input) => ipcRenderer.invoke("profile-login:run", profileId, input)
   },
+  legacyAuto: {
+    setEnabled: (enabled) => ipcRenderer.invoke("legacy-auto:set-enabled", Boolean(enabled)),
+    status: () => ipcRenderer.invoke("legacy-auto:status")
+  },
   layout: {
     setAiPanelCollapsed: (collapsed) => ipcRenderer.invoke("layout:set-ai-panel-collapsed", Boolean(collapsed))
   },
