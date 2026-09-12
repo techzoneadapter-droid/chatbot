@@ -20,6 +20,11 @@
     const button = document.getElementById("toggle-ai-panel");
     if (!button) return;
     button.addEventListener("click", () => void setCollapsed(!collapsed));
+    window.pagebot.onEvent((event) => {
+      if (event && event.type === "active-profile") {
+        void window.pagebot.layout.setAiPanelCollapsed(collapsed).catch(() => {});
+      }
+    });
     void setCollapsed(false);
   });
 })();
