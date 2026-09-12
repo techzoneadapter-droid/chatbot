@@ -26,7 +26,7 @@
     button.type = "button";
     button.className = "browser-shortcut meta-dev";
     button.title = "Meta Graph API Explorer";
-    button.innerHTML = "🔑 <span>Meta Dev</span>";
+    button.innerHTML = "🔑 <span>Token</span>";
     button.addEventListener("click", async () => {
       if (typeof state !== "undefined" && !state.activeProfile) {
         if (typeof log === "function") log("Hãy mở một profile trước khi mở Meta Graph API Explorer.", "warn");
