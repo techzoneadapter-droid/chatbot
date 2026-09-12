@@ -16,6 +16,7 @@
     loadScriptOnce("control-center.js", "data-pagebot-control-center", "1");
     loadScriptOnce("token-panel.js", "data-pagebot-token-panel", "1");
     loadScriptOnce("ai-chat-focus.js", "data-pagebot-ai-chat-focus", "1");
+    loadScriptOnce("ai-purpose-quality.js", "data-pagebot-ai-purpose-quality", "1");
     loadScriptOnce("auto-chat-current.js", "data-pagebot-auto-chat-current", "1");
   }
 
