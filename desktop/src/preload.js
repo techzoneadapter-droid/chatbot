@@ -40,6 +40,15 @@ contextBridge.exposeInMainWorld("pagebot", {
     test: (profileId) => ipcRenderer.invoke("proxy:test", profileId),
     disable: (profileId) => ipcRenderer.invoke("proxy:disable", profileId)
   },
+  profileLogin: {
+    get: (profileId) => ipcRenderer.invoke("profile-login:get", profileId),
+    save: (profileId, input) => ipcRenderer.invoke("profile-login:save", profileId, input),
+    clear: (profileId) => ipcRenderer.invoke("profile-login:clear", profileId),
+    run: (profileId, input) => ipcRenderer.invoke("profile-login:run", profileId, input)
+  },
+  layout: {
+    setAiPanelCollapsed: (collapsed) => ipcRenderer.invoke("layout:set-ai-panel-collapsed", Boolean(collapsed))
+  },
   secrets: {
     status: () => ipcRenderer.invoke("secrets:status"),
     set: (provider, apiKey) => ipcRenderer.invoke("secrets:set", provider, apiKey),
