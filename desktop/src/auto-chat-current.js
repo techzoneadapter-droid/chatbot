@@ -118,6 +118,8 @@
     if (!canRun(id)) return;
     if (busy) return schedule(id, 1000);
 
+    let currentKey = "";
+    let currentSignature = "";
     busy = true;
     try {
       const first = await window.pagebot.chat.snapshot();
@@ -137,6 +139,8 @@
       const key = conversationKey(stable);
       const signature = incomingSignature(stable);
       if (!signature || handledIncoming.get(key) === signature) return;
+      currentKey = key;
+      currentSignature = signature;
 
       if (typeof log === "function") log(`Auto nhẹ nhận tin khách: ${String(stable.latestText).slice(0, 120)}`, "info");
       const result = await recoverModelAndSuggest();
@@ -176,7 +180,13 @@
         );
       }
     } catch (error) {
-      if (typeof log === "function") log(`Auto nhẹ: ${cleanError(error)}`, "error");
+      const text = cleanError(error);
+      if (/429|quota|rate limit|exceeded your current quota/i.test(text) && currentKey && currentSignature) {
+        handledIncoming.set(currentKey, currentSignature);
+        if (typeof log === "function") log("Auto nhẹ dừng retry tin này vì API đang hết quota/429. Sẽ chỉ thử lại khi khách có tin mới.", "error");
+      } else if (typeof log === "function") {
+        log(`Auto nhẹ: ${text}`, "error");
+      }
     } finally {
       busy = false;
       schedule(id);
