@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/entry.js && node --check src/bootstrap.js && node --check src/profile-login-runtime.js && node --check src/ai-runtime.js && node --check src/main.js && node --check src/preload.js && node --check src/lazy-startup.js && node --check src/renderer.js && node --check src/profile-inline.js && node --check src/proxy-panel.js && node --check src/profile-login.js && node --check src/ai-options.js && node --check src/panel-toggle.js && node --check src/browser-utils.js",
+    "check": "node --check src/entry.js && node --check src/bootstrap.js && node --check src/profile-login-runtime.js && node --check src/ai-runtime.js && node --check src/main.js && node --check src/preload.js && node --check src/lazy-startup.js && node --check src/renderer.js && node --check src/profile-inline.js && node --check src/proxy-panel.js && node --check src/profile-login.js && node --check src/ai-options.js && node --check src/panel-toggle.js && node --check src/ai-chat-focus.js && node --check src/browser-utils.js",
     "test": "node --test test/*.test.js",
     "verify": "npm run check && npm test",
     "dist": "electron-builder --win nsis"
