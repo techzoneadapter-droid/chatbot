@@ -1,12 +1,30 @@
 (() => {
+  const POLL_MS = 4200;
+  const STABLE_MS = 420;
   let activationId = 0;
+  let timer = null;
+  let busy = false;
+  let lastHandledSignature = "";
 
   function cleanError(error) {
     const text = typeof errorText === "function" ? errorText(error) : (error?.message || String(error || "Lỗi Auto Chat"));
     return text.replace(/^Error:\s*/i, "");
   }
 
-  function sameConversation(before, after) {
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function snapshotSignature(snapshot) {
+    if (!snapshot) return "";
+    const conversation = snapshot.conversationKey || snapshot.url || "current-chat";
+    const tail = Array.isArray(snapshot.messages)
+      ? snapshot.messages.slice(-5).map((item) => `${item?.direction || "unknown"}:${String(item?.text || "").trim()}`).join("|")
+      : `${snapshot.latestDirection || "unknown"}:${String(snapshot.latestText || "").trim()}`;
+    return `${conversation}|${tail}`;
+  }
+
+  function sameCurrentMessage(before, after) {
     if (!before || !after) return false;
     const beforeKey = before.conversationKey || before.url || "";
     const afterKey = after.conversationKey || after.url || "";
@@ -14,6 +32,18 @@
     if (String(before.latestText || "").trim() !== String(after.latestText || "").trim()) return false;
     if (String(before.latestDirection || "") !== String(after.latestDirection || "")) return false;
     return true;
+  }
+
+  function clearTimer() {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  }
+
+  function schedule(id, delay = POLL_MS) {
+    clearTimer();
+    const toggle = document.getElementById("auto-reply");
+    if (id !== activationId || !toggle?.checked) return;
+    timer = setTimeout(() => void tick(id), delay);
   }
 
   async function recoverModelAndSuggest() {
@@ -38,37 +68,36 @@
     }
   }
 
-  async function answerCurrentMessage(id) {
+  async function tick(id) {
+    const toggle = document.getElementById("auto-reply");
+    if (id !== activationId || !toggle?.checked) return;
+    if (busy) return schedule(id, 900);
+
+    busy = true;
     try {
-      if (id !== activationId) return;
-      const toggle = document.getElementById("auto-reply");
-      if (!toggle?.checked) return;
-
-      const snapshot = await window.pagebot.chat.snapshot();
+      const first = await window.pagebot.chat.snapshot();
       if (id !== activationId || !toggle.checked) return;
-      if (!snapshot?.inputFound) {
-        if (typeof log === "function") log("Auto Chat đã bật nhưng chưa tìm thấy ô nhập tin nhắn.", "warn");
-        return;
-      }
-      if (!snapshot.latestText) {
-        if (typeof log === "function") log("Auto Chat đã bật. Chưa có tin khách để trả lời, app sẽ chờ tin mới.", "success");
-        return;
-      }
-      if (!snapshot.incoming) {
-        if (typeof log === "function") log("Auto Chat đã bật. Tin cuối hiện không phải của khách nên app sẽ chờ tin khách mới.", "success");
-        return;
-      }
-      if ((snapshot.confidence || 0) < 0.72) {
-        if (typeof log === "function") log(`Đã bật Auto nhưng độ tin cậy đọc hội thoại chỉ ${Math.round((snapshot.confidence || 0) * 100)}%. Chưa tự gửi để tránh nhầm.`, "warn");
+      if (!first?.supportedChat || !first?.inputFound || !first.latestText) return;
+      if (!first.incoming) return;
+      if ((first.confidence || 0) < 0.68) {
+        if (typeof log === "function") log(`Auto Chat thấy tin mới nhưng độ tin cậy đọc hội thoại chỉ ${Math.round((first.confidence || 0) * 100)}%.`, "warn");
         return;
       }
 
-      if (typeof log === "function") log(`Auto Chat đang trả lời tin hiện tại: ${String(snapshot.latestText).slice(0, 120)}`, "info");
+      const signature = snapshotSignature(first);
+      if (!signature || signature === lastHandledSignature) return;
+
+      await wait(STABLE_MS);
+      const stable = await window.pagebot.chat.snapshot();
+      if (id !== activationId || !toggle.checked) return;
+      if (!sameCurrentMessage(first, stable) || !stable?.incoming) return;
+
+      if (typeof log === "function") log(`Auto Chat nhận tin khách: ${String(stable.latestText).slice(0, 120)}`, "info");
       const result = await recoverModelAndSuggest();
       if (id !== activationId || !toggle.checked) return;
 
       const latest = await window.pagebot.chat.snapshot();
-      if (!sameConversation(result?.snapshot || snapshot, latest)) {
+      if (!sameCurrentMessage(result?.snapshot || stable, latest)) {
         if (typeof log === "function") log("Khách vừa nhắn thêm hoặc đã đổi hội thoại trong lúc AI soạn. Bỏ câu trả lời cũ.", "warn");
         return;
       }
@@ -82,22 +111,41 @@
 
       const sent = await window.pagebot.chat.send(text);
       if (!sent?.ok) throw new Error(sent?.reason || "Không gửi được tin nhắn vào Facebook.");
+
+      // Mark handled even when visual verification is inconclusive, otherwise a
+      // slow Facebook repaint could make the same customer message send twice.
+      lastHandledSignature = signature;
       if (typeof log === "function") {
-        log(sent.verified ? "Auto Chat đã trả lời tin khách đang mở." : "Auto Chat đã gửi thao tác nhưng chưa xác nhận được bong bóng tin nhắn mới.", sent.verified ? "success" : "warn");
+        log(
+          sent.verified ? "Auto Chat đã trả lời tin khách." : "Auto Chat đã gửi câu trả lời; Facebook chưa kịp xác nhận bong bóng tin mới.",
+          sent.verified ? "success" : "warn"
+        );
       }
     } catch (error) {
       if (typeof log === "function") log(`Auto Chat: ${cleanError(error)}`, "error");
+    } finally {
+      busy = false;
+      schedule(id);
     }
+  }
+
+  function activate() {
+    activationId += 1;
+    const id = activationId;
+    lastHandledSignature = "";
+    clearTimer();
+    const toggle = document.getElementById("auto-reply");
+    if (!toggle?.checked) {
+      if (typeof log === "function") log("Auto Chat nền đã dừng hoàn toàn.", "success");
+      return;
+    }
+    if (typeof log === "function") log("Auto Chat chạy nền nhẹ. App vẫn dùng bình thường; chỉ đọc chat khi đến lượt kiểm tra.", "success");
+    schedule(id, 650);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     const toggle = document.getElementById("auto-reply");
     if (!toggle) return;
-    toggle.addEventListener("change", () => {
-      activationId += 1;
-      const id = activationId;
-      if (!toggle.checked) return;
-      setTimeout(() => void answerCurrentMessage(id), 450);
-    });
+    toggle.addEventListener("change", activate);
   });
 })();

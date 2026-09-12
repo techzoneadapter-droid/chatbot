@@ -99,7 +99,9 @@ if (nativeFetch) {
   };
 }
 
+require("./legacy-auto-guard");
 require("./bootstrap");
 require("./profile-login-runtime");
 require("./cookie-tool-runtime");
 require("./chat-runtime");
+require("./chat-snapshot-lite");
