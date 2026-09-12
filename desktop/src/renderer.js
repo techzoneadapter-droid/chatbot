@@ -60,6 +60,14 @@ function bindStaticEvents() {
   $("#forward").addEventListener("click", () => window.pagebot.browser.forward());
   $("#reload").addEventListener("click", () => window.pagebot.browser.reload());
   $("#home").addEventListener("click", () => window.pagebot.browser.home());
+  $("#cookie-tool").addEventListener("click", async () => {
+    if (!state.activeProfile) return;
+    try {
+      await window.pagebot.cookieTool.open(state.activeProfile.id);
+    } catch (error) {
+      log(errorText(error), "error");
+    }
+  });
   $("#url-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -160,7 +168,7 @@ async function openProfile(profileId) {
 function renderAiPanel() {
   const profile = state.activeProfile;
   const disabled = !profile;
-  for (const id of ["ai-provider", "ai-model", "knowledge", "system-prompt", "auto-reply", "save-profile", "delete-profile", "suggest-reply", "inspect-chat", "test-ai"]) {
+  for (const id of ["ai-provider", "ai-model", "knowledge", "system-prompt", "auto-reply", "save-profile", "delete-profile", "suggest-reply", "inspect-chat", "test-ai", "cookie-tool"]) {
     $("#" + id).disabled = disabled;
   }
   if (!profile) {

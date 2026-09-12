@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld("pagebot", {
     navigate: (url) => ipcRenderer.invoke("browser:navigate", url),
     state: () => ipcRenderer.invoke("browser:state")
   },
+  cookieTool: {
+    open: (profileId) => ipcRenderer.invoke("cookie-tool:open", profileId)
+  },
   chat: {
     snapshot: () => ipcRenderer.invoke("chat:snapshot"),
     send: (text) => ipcRenderer.invoke("chat:send", text)

@@ -18,6 +18,7 @@ const AUTO_POLL_MS = 2500;
 const AUTO_COOLDOWN_MS = 7000;
 const MAX_AUTO_PER_MINUTE = 6;
 const MIN_AUTO_CONFIDENCE = 0.72;
+const COOKIE_EXTENSION_NAME = "Get Cookie For FPlus";
 
 let mainWindow = null;
 let browserView = null;
@@ -28,6 +29,87 @@ const lastAutoSentAt = new Map();
 const autoMinuteBuckets = new Map();
 const autoConversationState = new Map();
 const autoBusyProfiles = new Set();
+const cookieExtensionLoads = new Map();
+const cookieExtensionByProfile = new Map();
+const cookieExtensionWindows = new Map();
+
+function cookieExtensionPath() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "app.asar.unpacked", "extensions", "getcookiefplus");
+  }
+  return path.join(__dirname, "..", "extensions", "getcookiefplus");
+}
+
+async function ensureCookieExtension(profileId) {
+  const loaded = cookieExtensionByProfile.get(profileId);
+  if (loaded) return loaded;
+
+  const pending = cookieExtensionLoads.get(profileId);
+  if (pending) return pending;
+
+  const load = (async () => {
+    const extensionPath = cookieExtensionPath();
+    if (!fs.existsSync(path.join(extensionPath, "manifest.json"))) {
+      throw new Error("Không tìm thấy extension Get Cookie For FPlus trong bản desktop.");
+    }
+
+    const profileSession = session.fromPartition(`persist:pagebot-${profileId}`);
+    const existing = profileSession.extensions
+      .getAllExtensions()
+      .find((extension) => extension.name === COOKIE_EXTENSION_NAME);
+    const extension = existing || await profileSession.extensions.loadExtension(extensionPath);
+    cookieExtensionByProfile.set(profileId, extension);
+    return extension;
+  })();
+
+  cookieExtensionLoads.set(profileId, load);
+  try {
+    return await load;
+  } catch (error) {
+    cookieExtensionLoads.delete(profileId);
+    throw error;
+  }
+}
+
+async function openCookieExtension(profileId) {
+  if (!profileId || activeProfileId !== profileId || !browserView) {
+    throw new Error("Hãy mở một profile trước khi mở tool.");
+  }
+
+  const extension = await ensureCookieExtension(profileId);
+  const existingWindow = cookieExtensionWindows.get(profileId);
+  if (existingWindow && !existingWindow.isDestroyed()) {
+    existingWindow.show();
+    existingWindow.focus();
+    return { ok: true, extensionId: extension.id };
+  }
+
+  const popupWindow = new BrowserWindow({
+    width: 300,
+    height: 680,
+    minWidth: 280,
+    minHeight: 420,
+    parent: mainWindow || undefined,
+    title: COOKIE_EXTENSION_NAME,
+    backgroundColor: "#ffffff",
+    webPreferences: {
+      session: session.fromPartition(`persist:pagebot-${profileId}`),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  popupWindow.setMenuBarVisibility(false);
+  cookieExtensionWindows.set(profileId, popupWindow);
+  popupWindow.on("closed", () => {
+    if (cookieExtensionWindows.get(profileId) === popupWindow) cookieExtensionWindows.delete(profileId);
+  });
+
+  await popupWindow.loadURL(`${extension.url}/popup.html`);
+  popupWindow.show();
+  popupWindow.focus();
+  return { ok: true, extensionId: extension.id };
+}
 
 function dataFile() {
   return path.join(app.getPath("userData"), "pagebot-data.json");
@@ -176,6 +258,11 @@ async function openProfile(profileId) {
   resetProfileAutoState(profileId);
 
   const partition = `persist:pagebot-${profileId}`;
+  try {
+    await ensureCookieExtension(profileId);
+  } catch (error) {
+    sendEvent("log", { level: "warn", text: `Tool cookie chưa sẵn sàng: ${safeMessage(error)}` });
+  }
   const nextView = new WebContentsView({
     webPreferences: {
       partition,
@@ -689,14 +776,21 @@ function registerIpc() {
   ipcMain.handle("profiles:delete", async (_event, profileId) => {
     const profile = getProfile(profileId);
     if (!profile) return true;
+    const extensionWindow = cookieExtensionWindows.get(profileId);
+    if (extensionWindow && !extensionWindow.isDestroyed()) extensionWindow.close();
     if (activeProfileId === profileId) {
       stopAutoLoop();
       destroyBrowserView();
       activeProfileId = null;
     }
-    try {
-      await session.fromPartition(`persist:pagebot-${profileId}`).clearStorageData();
-    } catch {}
+    const profileSession = session.fromPartition(`persist:pagebot-${profileId}`);
+    const extension = cookieExtensionByProfile.get(profileId);
+    if (extension) {
+      try { profileSession.extensions.removeExtension(extension.id); } catch {}
+    }
+    cookieExtensionByProfile.delete(profileId);
+    cookieExtensionLoads.delete(profileId);
+    try { await profileSession.clearStorageData(); } catch {}
     const data = loadData();
     data.profiles = data.profiles.filter((item) => item.id !== profileId);
     saveData(data);
@@ -705,6 +799,7 @@ function registerIpc() {
   });
 
   ipcMain.handle("profile:open", (_event, profileId) => openProfile(profileId));
+  ipcMain.handle("cookie-tool:open", (_event, profileId) => openCookieExtension(profileId));
   ipcMain.handle("browser:back", () => browserView?.webContents.canGoBack() ? browserView.webContents.goBack() : null);
   ipcMain.handle("browser:forward", () => browserView?.webContents.canGoForward() ? browserView.webContents.goForward() : null);
   ipcMain.handle("browser:reload", () => browserView?.webContents.reload());

@@ -20,7 +20,8 @@
     "appId": "com.techzone.pagebotdesktop",
     "productName": "PageBot Desktop",
     "asar": true,
-    "files": ["src/**/*", "package.json"],
+    "files": ["src/**/*", "extensions/getcookiefplus/**/*", "package.json"],
+    "asarUnpack": ["extensions/getcookiefplus/**/*"],
     "directories": {"output": "dist"},
     "win": {"target": [{"target": "nsis", "arch": ["x64"]}]},
     "nsis": {
