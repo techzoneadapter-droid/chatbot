@@ -1,33 +1,16 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-let initialProfiles = null;
-let startupOpenDeferred = false;
-
-async function listProfiles() {
-  const profiles = await ipcRenderer.invoke("profiles:list");
-  if (initialProfiles === null) initialProfiles = Array.isArray(profiles) ? profiles : [];
-  return profiles;
-}
-
 async function openProfile(profileId) {
-  // renderer.js opens the first saved profile automatically during startup. Return
-  // its metadata once without creating Chromium/session work. Any later user click
-  // uses the real lazy network + browser open path.
-  if (!startupOpenDeferred && Array.isArray(initialProfiles)) {
-    const existing = initialProfiles.find((profile) => profile.id === profileId);
-    if (existing) {
-      startupOpenDeferred = true;
-      return existing;
-    }
-  }
-  startupOpenDeferred = true;
+  // Profiles are never opened automatically at startup. When the renderer calls
+  // this function it is a real user action, so initialize only this profile's
+  // network/session and then create its browser view.
   await ipcRenderer.invoke("profile:prepare-network", profileId);
   return ipcRenderer.invoke("profile:open", profileId);
 }
 
 contextBridge.exposeInMainWorld("pagebot", {
   profiles: {
-    list: listProfiles,
+    list: () => ipcRenderer.invoke("profiles:list"),
     create: (input) => ipcRenderer.invoke("profiles:create", input),
     update: (profileId, patch) => ipcRenderer.invoke("profiles:update", profileId, patch),
     delete: (profileId) => ipcRenderer.invoke("profiles:delete", profileId),

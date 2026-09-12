@@ -20,8 +20,8 @@ if not exist "node_modules\electron\dist\electron.exe" (
   )
 )
 
-echo [PageBot Desktop] Khoi dong nhanh DEV...
-call npm start
+echo [PageBot Desktop] Khoi dong DEV...
+"node_modules\electron\dist\electron.exe" .
 
 if errorlevel 1 (
   echo.
