@@ -2,7 +2,7 @@
   const ENGINES = {
     off: { label: "Tắt", detail: "Không có luồng Auto Chat nào chạy." },
     light: { label: "Auto nhẹ", detail: "Khuyến nghị · kiểm tra khoảng 6 giây/lần · ít tải Facebook." },
-    legacy: { label: "Auto tương thích", detail: "Luồng cũ · phản hồi nhanh hơn nhưng dùng tài nguyên nhiều hơn." }
+    legacy: { label: "Auto tương thích", detail: "Dùng khi Auto nhẹ bỏ sót tin hoặc không bắt được giao diện hiện tại · phản hồi nhanh hơn nhưng dùng tài nguyên nhiều hơn." }
   };
 
   window.__pagebotChatbotEngine = "off";
@@ -76,7 +76,7 @@
     window.dispatchEvent(new CustomEvent("pagebot:chatbot-engine-change", { detail: { engine: next } }));
 
     if (!options.quiet) {
-      if (next === "light") activityLog("Đã bật Auto nhẹ. Không chạy luồng Auto cũ.", "success");
+      if (next === "light") activityLog("Đã bật Auto nhẹ. Không chạy Auto tương thích.", "success");
       else if (next === "legacy") activityLog("Đã bật Auto tương thích. Auto nhẹ đã dừng.", "warn");
       else activityLog("Chatbot tự động đã tắt hoàn toàn.", "success");
     }
@@ -97,16 +97,16 @@
           <span class="cc-engine-dot"></span><span><b>Tắt</b><small>Không quét tin nhắn nền</small></span>
         </button>
         <button type="button" class="cc-engine-option" data-chatbot-engine="light" aria-pressed="false">
-          <span class="cc-engine-dot"></span><span><b>Auto nhẹ</b><small>Khuyến nghị · ít tài nguyên</small></span>
+          <span class="cc-engine-dot"></span><span><b>Auto nhẹ</b><small>Dùng bình thường · ít tài nguyên</small></span>
         </button>
         <button type="button" class="cc-engine-option" data-chatbot-engine="legacy" aria-pressed="false">
-          <span class="cc-engine-dot"></span><span><b>Auto tương thích</b><small>Luồng cũ · dùng khi cần</small></span>
+          <span class="cc-engine-dot"></span><span><b>Auto tương thích</b><small>Dùng khi Auto nhẹ bỏ sót hoặc không bắt được tin</small></span>
         </button>
       </div>
       <div id="chatbot-engine-status" class="cc-engine-status" data-engine="off">
         <strong>Tắt</strong><span>Không có luồng Auto Chat nào chạy.</span>
       </div>
-      <p class="help">Nếu app chậm, dùng <b>Auto nhẹ</b>. Auto tương thích chỉ bật khi bạn chủ động chọn.</p>
+      <p class="help"><b>Auto nhẹ</b> là chế độ mặc định. Chỉ chuyển sang <b>Auto tương thích</b> nếu Auto nhẹ bỏ sót tin hoặc không hoạt động ổn với giao diện Facebook hiện tại.</p>
     `;
     card.querySelectorAll("[data-chatbot-engine]").forEach((button) => {
       button.addEventListener("click", () => void setEngine(button.dataset.chatbotEngine));
@@ -121,11 +121,10 @@
       <div class="section-head">
         <div>
           <strong>Access Token</strong>
-          <small>Mở công cụ chính thức của Meta khi cần</small>
+          <small>Mở công cụ khi cần</small>
         </div>
       </div>
-      <p class="help">PageBot không đọc token từ cookie/session. Nút dưới đây mở Meta Graph API Explorer trong đúng profile đang dùng.</p>
-      <button id="cc-open-token" type="button" class="primary full">🔑 Mở Graph API Explorer</button>
+      <button id="cc-open-token" type="button" class="primary full">🔑 Mở Access Token</button>
     `;
     card.querySelector("#cc-open-token").addEventListener("click", async () => {
       if (!getActiveProfile()) {
@@ -138,6 +137,26 @@
         activityLog(error?.message || String(error), "error");
       }
     });
+    return card;
+  }
+
+  function makeCookieCard(cookieButton) {
+    const card = document.createElement("section");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="section-head">
+        <div>
+          <strong>Cookie</strong>
+          <small>Chỉ khởi chạy khi bạn bấm mở</small>
+        </div>
+      </div>
+      <p class="help">Không chạy khi chỉ mở app hoặc mở profile. Bấm nút bên dưới khi bạn muốn dùng.</p>
+    `;
+    cookieButton.className = "primary full cc-cookie-launch";
+    cookieButton.textContent = "🍪 Mở Cookie";
+    cookieButton.title = "Mở Cookie";
+    cookieButton.setAttribute("aria-label", "Mở Cookie");
+    card.appendChild(cookieButton);
     return card;
   }
 
@@ -167,7 +186,8 @@
     const chatCard = document.getElementById("suggest-reply")?.closest(".card");
     const activityCard = document.querySelector(".activity-card");
     const safetyNote = document.querySelector(".safety-note");
-    if (!apiCard || !proxyCard || !loginCard || !knowledgeCard || !chatCard || !activityCard) return;
+    const cookieButton = document.getElementById("cookie-tool");
+    if (!apiCard || !proxyCard || !loginCard || !knowledgeCard || !chatCard || !activityCard || !cookieButton) return;
 
     document.body.dataset.controlCenterReady = "1";
     addStylesheet();
@@ -180,7 +200,8 @@
       { id: "ai", label: "AI Chat", icon: "✦" },
       { id: "proxy", label: "Proxy", icon: "◉" },
       { id: "login", label: "Login FB", icon: "f" },
-      { id: "token", label: "Access Token", icon: "🔑" }
+      { id: "token", label: "Access Token", icon: "🔑" },
+      { id: "cookie", label: "Cookie", icon: "🍪" }
     ];
     const nav = makeNav(navItems);
     const content = document.createElement("div");
@@ -204,6 +225,7 @@
     panes.proxy.appendChild(proxyCard);
     panes.login.appendChild(loginCard);
     panes.token.appendChild(makeTokenCard());
+    panes.cookie.appendChild(makeCookieCard(cookieButton));
 
     const activityTitle = activityCard.querySelector(".section-head strong");
     const activitySmall = activityCard.querySelector(".section-head small");
