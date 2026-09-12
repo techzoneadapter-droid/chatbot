@@ -9,26 +9,39 @@
     }
   }
 
-  function setStatus(proxy) {
-    const badge = q("#proxy-status");
+  function setResult(message = "", kind = "") {
     const result = q("#proxy-result");
-    if (!badge) return;
+    if (!result) return;
+    result.textContent = message;
+    result.classList.toggle("hidden", !message);
+    result.classList.remove("proxy-result-error", "proxy-result-success", "proxy-result-info", "muted", "warn", "ok");
+    if (!message) return;
+    if (kind === "error") result.classList.add("proxy-result-error");
+    else if (kind === "success") result.classList.add("proxy-result-success");
+    else result.classList.add("proxy-result-info");
+  }
+
+  function setStatus(proxy, status = "normal") {
+    const indicator = q("#proxy-status");
+    if (!indicator) return;
+
+    // The indicator is deliberately silent while proxy is OFF. No "direct"
+    // label is shown: the switch itself is enough to communicate the disabled state.
+    indicator.textContent = "";
+    indicator.className = "proxy-indicator";
+    indicator.removeAttribute("aria-label");
+    indicator.removeAttribute("title");
+
     if (!proxy?.enabled) {
-      badge.textContent = "Kết nối trực tiếp";
-      badge.className = "status-badge ok";
-      if (result) {
-        result.textContent = proxy?.configured
-          ? "Đã lưu cấu hình proxy nhưng hiện đang TẮT. Bật 'Dùng proxy' rồi bấm Lưu & áp dụng khi cần."
-          : "Profile này hiện không dùng proxy.";
-      }
+      indicator.classList.add("hidden");
       return;
     }
-    badge.textContent = `${proxy.type === "socks5" ? "SOCKS5" : "HTTP/HTTPS"} proxy đang bật`;
-    badge.className = "status-badge warn";
-    if (result) {
-      const auth = proxy.username ? ` · user ${proxy.username}${proxy.hasPassword ? " · có mật khẩu" : ""}` : "";
-      result.textContent = `${proxy.host}:${proxy.port}${auth}`;
-    }
+
+    indicator.classList.remove("hidden");
+    indicator.classList.add("active");
+    if (status === "error") indicator.classList.add("error");
+    indicator.title = status === "error" ? "Proxy đang bật nhưng vừa gặp lỗi" : "Proxy đang bật";
+    indicator.setAttribute("aria-label", indicator.title);
   }
 
   async function loadProxy(profileId) {
@@ -37,6 +50,7 @@
       setDisabled(true);
       if (q("#proxy-enabled")) q("#proxy-enabled").checked = false;
       setStatus(null);
+      setResult();
       return;
     }
     setDisabled(false);
@@ -50,8 +64,10 @@
       q("#proxy-password").value = "";
       q("#proxy-password").placeholder = proxy.hasPassword ? "Đã lưu mật khẩu · để trống để giữ nguyên" : "Mật khẩu proxy (nếu có)";
       setStatus(proxy);
+      setResult();
     } catch (error) {
-      q("#proxy-result").textContent = error?.message || String(error);
+      setStatus(null);
+      setResult(`Lỗi tải cấu hình proxy: ${error?.message || String(error)}`, "error");
     }
   }
 
@@ -69,7 +85,7 @@
   async function saveProxy() {
     if (!activeProfileId) return;
     const wantsEnabled = q("#proxy-enabled").checked;
-    q("#proxy-result").textContent = wantsEnabled ? "Đang bật và áp dụng proxy..." : "Đang lưu cấu hình proxy (không bật)...";
+    setResult(wantsEnabled ? "Đang bật và áp dụng proxy..." : "Đang lưu cấu hình proxy...", "info");
     try {
       const proxy = await window.pagebot.proxy.save(activeProfileId, currentConfig());
       setStatus(proxy);
@@ -77,27 +93,36 @@
       q("#proxy-password").placeholder = proxy.hasPassword ? "Đã lưu mật khẩu · để trống để giữ nguyên" : "Mật khẩu proxy (nếu có)";
       if (proxy.enabled) {
         await window.pagebot.browser.reload();
-        q("#proxy-result").textContent = `Đã bật ${proxy.type === "socks5" ? "SOCKS5" : "HTTP/HTTPS"} ${proxy.host}:${proxy.port} và tải lại profile.`;
+        setResult();
       } else {
-        q("#proxy-result").textContent = "Đã lưu thông tin proxy nhưng chưa bật. App vẫn dùng kết nối trực tiếp.";
+        setResult();
       }
     } catch (error) {
-      q("#proxy-result").textContent = error?.message || String(error);
+      setStatus({ enabled: wantsEnabled }, "error");
+      setResult(`Lỗi proxy: ${error?.message || String(error)}`, "error");
     }
   }
 
   async function testProxy() {
     if (!activeProfileId) return;
-    q("#proxy-result").textContent = "Đang kiểm tra kết nối hiện tại...";
+    if (!q("#proxy-enabled").checked) {
+      setResult("Proxy đang tắt. Bật Dùng proxy và bấm Lưu & áp dụng trước khi kiểm tra.", "info");
+      return;
+    }
+
+    setResult("Đang kiểm tra proxy...", "info");
     try {
       const result = await window.pagebot.proxy.test(activeProfileId);
       if (result.direct) {
-        q("#proxy-result").textContent = "Profile đang dùng kết nối trực tiếp (DIRECT). Muốn test proxy hãy bật Dùng proxy và Lưu & áp dụng trước.";
+        setStatus(null);
+        setResult("Proxy chưa được áp dụng. Bấm Lưu & áp dụng rồi kiểm tra lại.", "error");
       } else {
-        q("#proxy-result").textContent = `Proxy hoạt động · IP ra ngoài: ${result.ip || "không đọc được"} · ${result.resolvedProxy || ""}`;
+        setStatus({ enabled: true });
+        setResult(`Proxy hoạt động · IP ra ngoài: ${result.ip || "không đọc được"}`, "success");
       }
     } catch (error) {
-      q("#proxy-result").textContent = `Kiểm tra thất bại: ${error?.message || String(error)}`;
+      setStatus({ enabled: true }, "error");
+      setResult(`Lỗi kiểm tra proxy: ${error?.message || String(error)}`, "error");
     }
   }
 
@@ -108,15 +133,17 @@
       q("#proxy-enabled").checked = false;
       setStatus(proxy);
       await window.pagebot.browser.reload();
-      q("#proxy-result").textContent = "Đã tắt proxy cho profile này. Lần mở app sau proxy cũng mặc định TẮT.";
+      setResult();
     } catch (error) {
-      q("#proxy-result").textContent = error?.message || String(error);
+      setResult(`Lỗi khi tắt proxy: ${error?.message || String(error)}`, "error");
     }
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     setDisabled(true);
     if (q("#proxy-enabled")) q("#proxy-enabled").checked = false;
+    setStatus(null);
+    setResult();
     q("#save-proxy")?.addEventListener("click", () => void saveProxy());
     q("#test-proxy")?.addEventListener("click", () => void testProxy());
     q("#disable-proxy")?.addEventListener("click", () => void disableProxy());
