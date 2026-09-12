@@ -101,3 +101,5 @@ if (nativeFetch) {
 
 require("./bootstrap");
 require("./profile-login-runtime");
+require("./cookie-tool-runtime");
+require("./chat-runtime");
