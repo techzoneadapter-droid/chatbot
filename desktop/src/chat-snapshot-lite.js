@@ -38,6 +38,11 @@ function captureScript() {
       const s = getComputedStyle(el);
       return r.width > 3 && r.height > 3 && s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity || 1) > 0 && r.bottom > 0 && r.top < innerHeight;
     };
+    const fastVisible = (el) => {
+      if (!el || !el.isConnected || el.closest('[aria-hidden="true"]')) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 2 && r.height > 2 && r.bottom > 0 && r.top < innerHeight;
+    };
 
     const selectors = [
       '[contenteditable="true"][role="textbox"]',
@@ -63,9 +68,9 @@ function captureScript() {
     while (parent && parent !== document.body) {
       const r = parent.getBoundingClientRect();
       const spansComposer = r.left <= ir.left + 12 && r.right >= ir.right - 12;
-      const enoughHistory = r.top < ir.top - Math.min(190, innerHeight * 0.22);
-      const usefulWidth = r.width >= ir.width * 0.78 && r.width <= Math.min(900, innerWidth * 0.74);
-      const usefulHeight = r.height >= Math.min(380, innerHeight * 0.5);
+      const enoughHistory = r.top < ir.top - Math.min(170, innerHeight * 0.2);
+      const usefulWidth = r.width >= ir.width * 0.78 && r.width <= Math.min(780, innerWidth * 0.68);
+      const usefulHeight = r.height >= Math.min(340, innerHeight * 0.46);
       if (spansComposer && enoughHistory && usefulWidth && usefulHeight) {
         root = parent;
         break;
@@ -75,9 +80,9 @@ function captureScript() {
     root = root || input.el.closest('[role="main"]') || document.body;
     const rr = root.getBoundingClientRect ? root.getBoundingClientRect() : { top: 0 };
 
-    const leftLimit = Math.max(0, ir.left - Math.min(100, ir.width * 0.25));
-    const rightLimit = Math.min(innerWidth, ir.right + Math.min(80, ir.width * 0.2));
-    const topLimit = Math.max(Number(rr.top || 0), ir.top - Math.max(950, innerHeight * 1.2));
+    const leftLimit = Math.max(0, ir.left - Math.min(90, ir.width * 0.23));
+    const rightLimit = Math.min(innerWidth, ir.right + Math.min(70, ir.width * 0.18));
+    const topLimit = Math.max(Number(rr.top || 0), ir.top - Math.max(780, innerHeight * 1.0));
     const skipExact = /^(Gửi|Send|Đã xem|Seen|Like|Thích|Reply|Trả lời|Enter|Nhấn Enter|Message|Tin nhắn|More|Xem thêm|Forward|Chuyển tiếp|Actions|Hành động|Xem danh bạ|Tạo quảng cáo nhắn tin)$/i;
     const skipTime = /^\\d{1,2}:\\d{2}(?:\\s?[AP]M)?$/i;
     const rows = [];
@@ -86,19 +91,19 @@ function captureScript() {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let node = walker.nextNode();
     let scanned = 0;
-    while (node && scanned < 5000) {
+    while (node && scanned < 2200) {
       const text = clean(node.nodeValue);
       const el = node.parentElement;
       scanned += 1;
       node = walker.nextNode();
-      if (!text || !el || text.length > 1200 || skipExact.test(text) || skipTime.test(text)) continue;
+      if (!text || !el || text.length > 1000 || skipExact.test(text) || skipTime.test(text)) continue;
       if (/^(Messenger|Instagram|WhatsApp|Tất cả tin nhắn|Chưa đọc|Ưu tiên|Trao đổi)$/i.test(text)) continue;
-      if (!visible(el)) continue;
+      if (!fastVisible(el)) continue;
       const r = el.getBoundingClientRect();
       if (r.bottom >= ir.top - 2 || r.top < topLimit) continue;
       if (r.right < leftLimit || r.left > rightLimit) continue;
-      if (r.height > 220 || r.width > ir.width * 1.08) continue;
-      const key = Math.round(r.left / 5) + ':' + Math.round(r.top / 5) + ':' + text;
+      if (r.height > 210 || r.width > ir.width * 1.06) continue;
+      const key = Math.round(r.left / 6) + ':' + Math.round(r.top / 6) + ':' + text;
       if (seen.has(key)) continue;
       seen.add(key);
       const leftGap = Math.max(0, r.left - ir.left);
@@ -116,8 +121,8 @@ function captureScript() {
       if (!duplicate) deduped.push(row);
     }
 
-    let messages = deduped.filter((item) => item.direction !== 'unknown').slice(-16);
-    if (!messages.length) messages = deduped.slice(-16);
+    let messages = deduped.filter((item) => item.direction !== 'unknown').slice(-14);
+    if (!messages.length) messages = deduped.slice(-14);
     const latest = messages[messages.length - 1] || null;
 
     const headings = Array.from(root.querySelectorAll ? root.querySelectorAll('h1,h2,h3,[role="heading"]') : [])
@@ -142,7 +147,7 @@ function captureScript() {
       latestText: latest?.text || '',
       latestDirection: latest?.direction || 'unknown',
       incoming,
-      history: messages.slice(-12).map((item) => (item.direction === 'incoming' ? 'Khách: ' : item.direction === 'outgoing' ? 'Bạn/Page: ' : '') + item.text),
+      history: messages.slice(-10).map((item) => (item.direction === 'incoming' ? 'Khách: ' : item.direction === 'outgoing' ? 'Bạn/Page: ' : '') + item.text),
       messages: messages.map((item) => ({ text: item.text, direction: item.direction })),
       messageCount: messages.length,
       title,

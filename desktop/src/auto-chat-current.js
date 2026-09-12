@@ -1,10 +1,14 @@
 (() => {
-  const POLL_MS = 4200;
-  const STABLE_MS = 420;
+  const POLL_MS = 6000;
+  const STABLE_MS = 380;
   let activationId = 0;
   let timer = null;
   let busy = false;
   let lastHandledSignature = "";
+
+  function lightEngineSelected() {
+    return window.__pagebotChatbotEngine === "light";
+  }
 
   function cleanError(error) {
     const text = typeof errorText === "function" ? errorText(error) : (error?.message || String(error || "Lỗi Auto Chat"));
@@ -39,10 +43,14 @@
     timer = null;
   }
 
+  function canRun(id) {
+    const toggle = document.getElementById("auto-reply");
+    return id === activationId && Boolean(toggle?.checked) && lightEngineSelected();
+  }
+
   function schedule(id, delay = POLL_MS) {
     clearTimer();
-    const toggle = document.getElementById("auto-reply");
-    if (id !== activationId || !toggle?.checked) return;
+    if (!canRun(id)) return;
     timer = setTimeout(() => void tick(id), delay);
   }
 
@@ -63,24 +71,23 @@
       state.activeProfile = await window.pagebot.profiles.update(state.activeProfile.id, { aiModel: model });
       const modelInput = document.getElementById("ai-model");
       if (modelInput) modelInput.value = model;
-      if (typeof log === "function") log(`Auto Chat đổi sang model khả dụng: ${model}`, "warn");
+      if (typeof log === "function") log(`Auto nhẹ đổi sang model khả dụng: ${model}`, "warn");
       return window.pagebot.ai.suggest();
     }
   }
 
   async function tick(id) {
-    const toggle = document.getElementById("auto-reply");
-    if (id !== activationId || !toggle?.checked) return;
-    if (busy) return schedule(id, 900);
+    if (!canRun(id)) return;
+    if (busy) return schedule(id, 1000);
 
     busy = true;
     try {
       const first = await window.pagebot.chat.snapshot();
-      if (id !== activationId || !toggle.checked) return;
+      if (!canRun(id)) return;
       if (!first?.supportedChat || !first?.inputFound || !first.latestText) return;
       if (!first.incoming) return;
       if ((first.confidence || 0) < 0.68) {
-        if (typeof log === "function") log(`Auto Chat thấy tin mới nhưng độ tin cậy đọc hội thoại chỉ ${Math.round((first.confidence || 0) * 100)}%.`, "warn");
+        if (typeof log === "function") log(`Auto nhẹ thấy tin mới nhưng độ tin cậy đọc hội thoại chỉ ${Math.round((first.confidence || 0) * 100)}%.`, "warn");
         return;
       }
 
@@ -89,12 +96,12 @@
 
       await wait(STABLE_MS);
       const stable = await window.pagebot.chat.snapshot();
-      if (id !== activationId || !toggle.checked) return;
+      if (!canRun(id)) return;
       if (!sameCurrentMessage(first, stable) || !stable?.incoming) return;
 
-      if (typeof log === "function") log(`Auto Chat nhận tin khách: ${String(stable.latestText).slice(0, 120)}`, "info");
+      if (typeof log === "function") log(`Auto nhẹ nhận tin khách: ${String(stable.latestText).slice(0, 120)}`, "info");
       const result = await recoverModelAndSuggest();
-      if (id !== activationId || !toggle.checked) return;
+      if (!canRun(id)) return;
 
       const latest = await window.pagebot.chat.snapshot();
       if (!sameCurrentMessage(result?.snapshot || stable, latest)) {
@@ -112,17 +119,15 @@
       const sent = await window.pagebot.chat.send(text);
       if (!sent?.ok) throw new Error(sent?.reason || "Không gửi được tin nhắn vào Facebook.");
 
-      // Mark handled even when visual verification is inconclusive, otherwise a
-      // slow Facebook repaint could make the same customer message send twice.
       lastHandledSignature = signature;
       if (typeof log === "function") {
         log(
-          sent.verified ? "Auto Chat đã trả lời tin khách." : "Auto Chat đã gửi câu trả lời; Facebook chưa kịp xác nhận bong bóng tin mới.",
+          sent.verified ? "Auto nhẹ đã trả lời tin khách." : "Auto nhẹ đã gửi câu trả lời; Facebook chưa kịp xác nhận bong bóng tin mới.",
           sent.verified ? "success" : "warn"
         );
       }
     } catch (error) {
-      if (typeof log === "function") log(`Auto Chat: ${cleanError(error)}`, "error");
+      if (typeof log === "function") log(`Auto nhẹ: ${cleanError(error)}`, "error");
     } finally {
       busy = false;
       schedule(id);
@@ -134,14 +139,12 @@
     const id = activationId;
     lastHandledSignature = "";
     clearTimer();
-    const toggle = document.getElementById("auto-reply");
-    if (!toggle?.checked) {
-      if (typeof log === "function") log("Auto Chat nền đã dừng hoàn toàn.", "success");
-      return;
-    }
-    if (typeof log === "function") log("Auto Chat chạy nền nhẹ. App vẫn dùng bình thường; chỉ đọc chat khi đến lượt kiểm tra.", "success");
-    schedule(id, 650);
+    if (!canRun(id)) return;
+    if (typeof log === "function") log("Auto nhẹ đã bật. Chỉ quét hội thoại khi đến lượt kiểm tra (~6 giây/lần).", "success");
+    schedule(id, 700);
   }
+
+  window.addEventListener("pagebot:chatbot-engine-change", activate);
 
   document.addEventListener("DOMContentLoaded", () => {
     const toggle = document.getElementById("auto-reply");
