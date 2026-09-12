@@ -1,10 +1,12 @@
 (() => {
   const POLL_MS = 6000;
-  const STABLE_MS = 380;
+  const QUIET_MS = 1100;
+  const MAX_STABLE_PASSES = 3;
   let activationId = 0;
   let timer = null;
   let busy = false;
-  let lastHandledSignature = "";
+  const handledIncoming = new Map();
+  const lastSentText = new Map();
 
   function lightEngineSelected() {
     return window.__pagebotChatbotEngine === "light";
@@ -19,23 +21,58 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  function snapshotSignature(snapshot) {
-    if (!snapshot) return "";
-    const conversation = snapshot.conversationKey || snapshot.url || "current-chat";
-    const tail = Array.isArray(snapshot.messages)
-      ? snapshot.messages.slice(-5).map((item) => `${item?.direction || "unknown"}:${String(item?.text || "").trim()}`).join("|")
-      : `${snapshot.latestDirection || "unknown"}:${String(snapshot.latestText || "").trim()}`;
-    return `${conversation}|${tail}`;
+  function normalizeText(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .replace(/[^\p{L}\p{N}\s]/gu, "")
+      .trim();
   }
 
-  function sameCurrentMessage(before, after) {
-    if (!before || !after) return false;
-    const beforeKey = before.conversationKey || before.url || "";
-    const afterKey = after.conversationKey || after.url || "";
-    if (beforeKey && afterKey && beforeKey !== afterKey) return false;
-    if (String(before.latestText || "").trim() !== String(after.latestText || "").trim()) return false;
-    if (String(before.latestDirection || "") !== String(after.latestDirection || "")) return false;
-    return true;
+  function conversationKey(snapshot) {
+    return snapshot?.conversationKey || snapshot?.url || "current-chat";
+  }
+
+  function incomingSignature(snapshot) {
+    if (!snapshot) return "";
+    const incoming = Array.isArray(snapshot.messages)
+      ? snapshot.messages
+          .filter((item) => item?.direction === "incoming")
+          .slice(-6)
+          .map((item) => normalizeText(item?.text))
+          .filter(Boolean)
+      : [normalizeText(snapshot.latestText)].filter(Boolean);
+    return `${conversationKey(snapshot)}|${incoming.join("||")}`;
+  }
+
+  function similarText(a, b) {
+    const left = normalizeText(a);
+    const right = normalizeText(b);
+    if (!left || !right) return false;
+    if (left === right) return true;
+    const shorter = left.length <= right.length ? left : right;
+    const longer = left.length > right.length ? left : right;
+    return shorter.length >= 24 && longer.includes(shorter) && shorter.length / longer.length >= 0.82;
+  }
+
+  function sameConversation(before, after) {
+    return Boolean(before && after && conversationKey(before) === conversationKey(after));
+  }
+
+  async function waitForStableIncoming(initial, id) {
+    let current = initial;
+    let previousSignature = incomingSignature(initial);
+    for (let pass = 0; pass < MAX_STABLE_PASSES; pass += 1) {
+      await wait(QUIET_MS);
+      if (!canRun(id)) return null;
+      const next = await window.pagebot.chat.snapshot();
+      if (!next?.incoming || !sameConversation(current, next)) return null;
+      const nextSignature = incomingSignature(next);
+      if (nextSignature === previousSignature) return next;
+      current = next;
+      previousSignature = nextSignature;
+    }
+    return current;
   }
 
   function clearTimer() {
@@ -59,6 +96,7 @@
       return await window.pagebot.ai.suggest();
     } catch (error) {
       const text = cleanError(error);
+      if (/429|quota|rate limit|exceeded your current quota/i.test(text)) throw error;
       if (!/(model|404|503|overload|high demand|unavailable|not found)/i.test(text)) throw error;
       if (typeof state === "undefined" || !state.activeProfile) throw error;
 
@@ -84,33 +122,43 @@
     try {
       const first = await window.pagebot.chat.snapshot();
       if (!canRun(id)) return;
-      if (!first?.supportedChat || !first?.inputFound || !first.latestText) return;
-      if (!first.incoming) return;
+      if (!first?.supportedChat || !first?.inputFound || !first.latestText || !first.incoming) return;
       if ((first.confidence || 0) < 0.68) {
         if (typeof log === "function") log(`Auto nhẹ thấy tin mới nhưng độ tin cậy đọc hội thoại chỉ ${Math.round((first.confidence || 0) * 100)}%.`, "warn");
         return;
       }
 
-      const signature = snapshotSignature(first);
-      if (!signature || signature === lastHandledSignature) return;
+      const firstKey = conversationKey(first);
+      const firstSignature = incomingSignature(first);
+      if (!firstSignature || handledIncoming.get(firstKey) === firstSignature) return;
 
-      await wait(STABLE_MS);
-      const stable = await window.pagebot.chat.snapshot();
-      if (!canRun(id)) return;
-      if (!sameCurrentMessage(first, stable) || !stable?.incoming) return;
+      const stable = await waitForStableIncoming(first, id);
+      if (!stable || !canRun(id)) return;
+      const key = conversationKey(stable);
+      const signature = incomingSignature(stable);
+      if (!signature || handledIncoming.get(key) === signature) return;
 
       if (typeof log === "function") log(`Auto nhẹ nhận tin khách: ${String(stable.latestText).slice(0, 120)}`, "info");
       const result = await recoverModelAndSuggest();
       if (!canRun(id)) return;
 
       const latest = await window.pagebot.chat.snapshot();
-      if (!sameCurrentMessage(result?.snapshot || stable, latest)) {
+      if (!latest?.incoming || !sameConversation(stable, latest) || incomingSignature(latest) !== signature) {
         if (typeof log === "function") log("Khách vừa nhắn thêm hoặc đã đổi hội thoại trong lúc AI soạn. Bỏ câu trả lời cũ.", "warn");
         return;
       }
 
       const text = String(result?.text || "").trim();
       if (!text) throw new Error("AI không tạo được câu trả lời.");
+
+      const recentOutgoing = Array.isArray(latest.messages)
+        ? latest.messages.filter((item) => item?.direction === "outgoing").slice(-5).map((item) => item?.text)
+        : [];
+      if (recentOutgoing.some((item) => similarText(text, item)) || similarText(text, lastSentText.get(key))) {
+        handledIncoming.set(key, signature);
+        if (typeof log === "function") log("Auto nhẹ đã chặn một câu trả lời bị lặp với tin Page vừa gửi.", "warn");
+        return;
+      }
 
       const output = document.getElementById("reply-output");
       if (output) output.value = text;
@@ -119,7 +167,8 @@
       const sent = await window.pagebot.chat.send(text);
       if (!sent?.ok) throw new Error(sent?.reason || "Không gửi được tin nhắn vào Facebook.");
 
-      lastHandledSignature = signature;
+      handledIncoming.set(key, signature);
+      lastSentText.set(key, text);
       if (typeof log === "function") {
         log(
           sent.verified ? "Auto nhẹ đã trả lời tin khách." : "Auto nhẹ đã gửi câu trả lời; Facebook chưa kịp xác nhận bong bóng tin mới.",
@@ -137,10 +186,9 @@
   function activate() {
     activationId += 1;
     const id = activationId;
-    lastHandledSignature = "";
     clearTimer();
     if (!canRun(id)) return;
-    if (typeof log === "function") log("Auto nhẹ đã bật. Chỉ quét hội thoại khi đến lượt kiểm tra (~6 giây/lần).", "success");
+    if (typeof log === "function") log("Auto nhẹ đã bật. Tin khách gửi sát nhau sẽ được gom trước khi AI trả lời.", "success");
     schedule(id, 700);
   }
 
