@@ -6,9 +6,68 @@
   margin-bottom: 8px;
 }
 
+/* Proxy state is intentionally visual-only: hidden while OFF, glowing while ON. */
+#proxy-status {
+  width: 11px;
+  height: 11px;
+  min-width: 11px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  font-size: 0;
+  line-height: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#proxy-status.hidden {
+  display: none !important;
+}
+
+#proxy-status.active {
+  display: inline-block;
+  background: #22c55e;
+  box-shadow:
+    0 0 0 3px rgba(34, 197, 94, .14),
+    0 0 10px rgba(34, 197, 94, .72),
+    0 0 18px rgba(34, 197, 94, .34);
+  animation: proxy-live-pulse 1.55s ease-in-out infinite;
+}
+
+#proxy-status.active.error {
+  background: #ef4444;
+  box-shadow:
+    0 0 0 3px rgba(239, 68, 68, .14),
+    0 0 10px rgba(239, 68, 68, .66),
+    0 0 18px rgba(239, 68, 68, .30);
+}
+
+@keyframes proxy-live-pulse {
+  0%, 100% { transform: scale(.92); opacity: .86; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+
 .proxy-result {
   margin-top: 10px;
   margin-bottom: 0;
+}
+
+.proxy-result.proxy-result-info {
+  color: #596579;
+  border-color: #dce3ec;
+  background: #f8fafc;
+}
+
+.proxy-result.proxy-result-success {
+  color: #157a49;
+  border-color: #b9e6cf;
+  background: #effaf5;
+}
+
+.proxy-result.proxy-result-error {
+  color: #c43b47;
+  border-color: #efc4ca;
+  background: #fff3f5;
 }
 
 .chat-head {
