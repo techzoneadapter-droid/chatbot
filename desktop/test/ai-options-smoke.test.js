@@ -21,9 +21,10 @@ test("bootstrap does not initialize all profile sessions on startup", () => {
   assert.doesNotMatch(source, /Promise\.allSettled\(data\.profiles/);
 });
 
-test("DEV launcher skips verify on every normal startup", () => {
+test("DEV launcher skips verify and npm wrapper on every normal startup", () => {
   const source = fs.readFileSync(path.join(root, "run-dev.bat"), "utf8");
-  assert.match(source, /npm start/i);
+  assert.match(source, /electron\\dist\\electron\.exe/i);
+  assert.doesNotMatch(source, /npm start/i);
   assert.doesNotMatch(source, /npm run verify/i);
   assert.equal(fs.existsSync(path.join(root, "verify-dev.bat")), true);
 });
