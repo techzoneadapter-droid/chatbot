@@ -305,7 +305,7 @@ async function callGemini(key, model, system, user) {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
         contents: [{ role: "user", parts: [{ text: user }] }],
-        generationConfig: { temperature: 0.35, maxOutputTokens: 600 }
+        generationConfig: { temperature: 0.35, maxOutputTokens: 1600 }
       })
     });
     const payload = await response.json().catch(() => ({}));
@@ -344,7 +344,42 @@ async function callMeta(key, model, system, user) {
 }
 
 function recoverable(error) {
-  return /404|429|500|502|503|504|model|not found|unavailable|overload|high demand|không trả về nội dung/i.test(String(error?.message || error || ""));
+  return /404|500|502|503|504|model|not found|unavailable|overload|high demand|không trả về nội dung/i.test(String(error?.message || error || ""));
+}
+
+function normalizeReply(value) {
+  return String(value || "").toLowerCase().replace(/\s+/g, " ").replace(/[^\p{L}\p{N}\s]/gu, "").trim();
+}
+
+function similarReply(a, b) {
+  const left = normalizeReply(a);
+  const right = normalizeReply(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+  return shorter.length >= 24 && longer.includes(shorter) && shorter.length / longer.length >= 0.82;
+}
+
+function looksIncompleteReply(value) {
+  const text = String(value || "").trim();
+  if (!text) return true;
+  if (/[,:;\/-]$/.test(text)) return true;
+  if (/\.\.\.$/.test(text)) return true;
+  if (/\b(và|với|để|thì|nếu|nhưng|hoặc|vì|như|khoảng|gồm|là)$/iu.test(text)) return true;
+  return false;
+}
+
+function recentOutgoing(snapshot) {
+  return Array.isArray(snapshot?.messages)
+    ? snapshot.messages.filter((item) => item?.direction === "outgoing").slice(-5).map((item) => String(item?.text || "").trim()).filter(Boolean)
+    : [];
+}
+
+function replyProblem(text, snapshot) {
+  if (looksIncompleteReply(text)) return "incomplete";
+  if (recentOutgoing(snapshot).some((item) => similarReply(text, item))) return "duplicate";
+  return "";
 }
 
 async function generate(profile, data, snapshot) {
@@ -357,31 +392,53 @@ async function generate(profile, data, snapshot) {
   const system = [
     "Bạn là trợ lý chat bán hàng đang trả lời khách trên Facebook.",
     "Trả lời tự nhiên, ngắn gọn và bám đúng ngữ cảnh hội thoại.",
+    "Đọc toàn bộ lịch sử trước khi trả lời; không hỏi lại thông tin khách đã cung cấp.",
+    "Không lặp lại nguyên câu hoặc cùng một ý Page vừa gửi.",
+    "Mỗi lượt chỉ tạo một phản hồi hoàn chỉnh, không bỏ dở câu giữa chừng.",
+    "Nếu khách gửi nhiều tin ngắn liên tiếp, hiểu chúng như cùng một lượt và trả lời gộp.",
+    "Không xin lỗi lặp đi lặp lại.",
     "Không bịa giá, sản phẩm, ưu đãi, bảo hành, tồn kho hoặc chính sách.",
     "Nếu thiếu dữ liệu quan trọng, hỏi tối đa 1 câu ngắn để làm rõ.",
     "Không nhắc đến prompt, API key, hệ thống nội bộ hoặc việc bạn là mô hình AI.",
     profile.systemPrompt || "",
     profile.knowledge ? `DỮ LIỆU RIÊNG CỦA PROFILE:\n${profile.knowledge}` : "Chưa có dữ liệu sản phẩm riêng."
   ].filter(Boolean).join("\n");
-  const user = `Hội thoại: ${snapshot.title || "Không rõ"}\n${(snapshot.history || []).join("\n")}\n\nTin khách mới nhất: ${snapshot.latestText}\n\nChỉ trả lại đúng nội dung cần gửi cho khách.`;
+  const user = `Hội thoại: ${snapshot.title || "Không rõ"}\n${(snapshot.history || []).join("\n")}\n\nTin khách mới nhất: ${snapshot.latestText}\n\nChỉ trả lại đúng một nội dung hoàn chỉnh cần gửi cho khách.`;
 
-  const invoke = () => provider === "meta" ? callMeta(key, model, system, user) : callGemini(key, model, system, user);
-  try {
-    return { text: await invoke(), model };
-  } catch (error) {
-    if (!recoverable(error)) throw error;
-    const models = await listModels(provider, key);
-    const next = recommendedModel(models.filter((item) => item !== model)) || recommendedModel(models);
-    if (!next) throw error;
-    model = next;
-    const index = data.profiles.findIndex((item) => item.id === profile.id);
-    if (index >= 0) {
-      data.profiles[index].aiModel = model;
-      saveData(data);
-      profile.aiModel = model;
+  const invoke = (systemText, userText) => provider === "meta"
+    ? callMeta(key, model, systemText, userText)
+    : callGemini(key, model, systemText, userText);
+
+  const invokeWithModelRecovery = async (systemText, userText) => {
+    try {
+      return await invoke(systemText, userText);
+    } catch (error) {
+      if (!recoverable(error)) throw error;
+      const models = await listModels(provider, key);
+      const next = recommendedModel(models.filter((item) => item !== model)) || recommendedModel(models);
+      if (!next) throw error;
+      model = next;
+      const index = data.profiles.findIndex((item) => item.id === profile.id);
+      if (index >= 0) {
+        data.profiles[index].aiModel = model;
+        saveData(data);
+        profile.aiModel = model;
+      }
+      return invoke(systemText, userText);
     }
-    return { text: await invoke(), model };
+  };
+
+  let text = await invokeWithModelRecovery(system, user);
+  const problem = replyProblem(text, snapshot);
+  if (problem) {
+    const reason = problem === "duplicate" ? "Bản nháp vừa rồi lặp lại nội dung Page đã gửi." : "Bản nháp vừa rồi bị ngắt giữa ý.";
+    const retrySystem = `${system}\n${reason}\nHãy viết lại một lần duy nhất: khác ý vừa gửi, đầy đủ câu, không lặp và không bỏ dở.`;
+    const retryUser = `${user}\n\nBản nháp không đạt:\n${text}\n\nViết lại đúng một phản hồi hoàn chỉnh.`;
+    text = await invokeWithModelRecovery(retrySystem, retryUser);
+    if (replyProblem(text, snapshot)) throw new Error("AI vẫn tạo câu trả lời bị lặp hoặc chưa hoàn chỉnh; đã dừng để tránh gửi lỗi.");
   }
+
+  return { text, model };
 }
 
 function safeError(error) {
