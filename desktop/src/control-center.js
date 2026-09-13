@@ -127,10 +127,7 @@
       <button id="cc-open-token" type="button" class="primary full">🔑 Mở Access Token</button>
     `;
     card.querySelector("#cc-open-token").addEventListener("click", async () => {
-      if (!getActiveProfile()) {
-        activityLog("Hãy mở một profile trước.", "warn");
-        return;
-      }
+      if (!getActiveProfile()) return activityLog("Hãy mở một profile trước.", "warn");
       try {
         await window.pagebot.browser.navigate("https://developers.facebook.com/tools/explorer/");
       } catch (error) {
@@ -140,23 +137,81 @@
     return card;
   }
 
-  function makeCookieCard(cookieButton) {
+  function makeCookieCard() {
     const card = document.createElement("section");
     card.className = "card";
     card.innerHTML = `
       <div class="section-head">
         <div>
-          <strong>Cookie</strong>
-          <small>Chỉ khởi chạy khi bạn bấm mở</small>
+          <strong>Phiên Facebook</strong>
+          <small>Quản lý trực tiếp trong app · không mở popup</small>
         </div>
       </div>
-      <p class="help">Không chạy khi chỉ mở app hoặc mở profile. Bấm nút bên dưới khi bạn muốn dùng.</p>
+      <div id="cc-session-state" class="diagnostics muted">Mở một profile để xem trạng thái phiên.</div>
+      <div class="button-row" style="margin-top:10px">
+        <button id="cc-session-facebook" type="button" class="secondary">Mở Facebook</button>
+        <button id="cc-session-login" type="button" class="primary">Mở trang đăng nhập</button>
+      </div>
+      <div class="button-row">
+        <button id="cc-session-reload" type="button" class="ghost">Tải lại trang</button>
+        <button id="cc-session-clear-login" type="button" class="ghost danger">Xóa đăng nhập đã lưu</button>
+      </div>
+      <p class="help">Tab này không gửi dữ liệu đăng nhập ra máy chủ riêng. Thông tin đăng nhập đã lưu của profile vẫn dùng Windows secure storage như mục Login FB.</p>
     `;
-    cookieButton.className = "primary full cc-cookie-launch";
-    cookieButton.textContent = "🍪 Mở Cookie";
-    cookieButton.title = "Mở Cookie";
-    cookieButton.setAttribute("aria-label", "Mở Cookie");
-    card.appendChild(cookieButton);
+
+    const status = card.querySelector("#cc-session-state");
+    const refresh = async () => {
+      const profile = getActiveProfile();
+      if (!profile) {
+        status.className = "diagnostics muted";
+        status.textContent = "Mở một profile để xem trạng thái phiên.";
+        return;
+      }
+      try {
+        const browser = await window.pagebot.browser.state();
+        const url = String(browser?.url || "");
+        const onFacebook = /(^|\.)facebook\.com/i.test((() => { try { return new URL(url).hostname; } catch { return ""; } })());
+        const loginFlow = /\/login|checkpoint|two_step|two-factor/i.test(url);
+        status.className = `diagnostics ${onFacebook && !loginFlow ? "ok" : "warn"}`;
+        status.innerHTML = `<div><b>Profile:</b> ${profile.name}</div><div><b>Trang hiện tại:</b> ${url || "Chưa mở trang"}</div><div><b>Trạng thái:</b> ${onFacebook && !loginFlow ? "Đang ở trong Facebook" : loginFlow ? "Facebook đang yêu cầu đăng nhập/xác minh" : "Chưa ở trang Facebook"}</div>`;
+      } catch (error) {
+        status.className = "diagnostics warn";
+        status.textContent = error?.message || String(error);
+      }
+    };
+
+    card.refreshSessionState = refresh;
+
+    card.querySelector("#cc-session-facebook").addEventListener("click", async () => {
+      if (!getActiveProfile()) return activityLog("Hãy mở một profile trước.", "warn");
+      try { await window.pagebot.browser.navigate("https://www.facebook.com/"); await refresh(); }
+      catch (error) { activityLog(error?.message || String(error), "error"); }
+    });
+
+    card.querySelector("#cc-session-login").addEventListener("click", async () => {
+      if (!getActiveProfile()) return activityLog("Hãy mở một profile trước.", "warn");
+      try { await window.pagebot.browser.navigate("https://www.facebook.com/login/"); await refresh(); }
+      catch (error) { activityLog(error?.message || String(error), "error"); }
+    });
+
+    card.querySelector("#cc-session-reload").addEventListener("click", async () => {
+      if (!getActiveProfile()) return activityLog("Hãy mở một profile trước.", "warn");
+      try { await window.pagebot.browser.reload(); setTimeout(() => void refresh(), 500); }
+      catch (error) { activityLog(error?.message || String(error), "error"); }
+    });
+
+    card.querySelector("#cc-session-clear-login").addEventListener("click", async () => {
+      const profile = getActiveProfile();
+      if (!profile) return activityLog("Hãy mở một profile trước.", "warn");
+      if (!confirm("Xóa tài khoản + mật khẩu Facebook đã lưu của profile này? Phiên Facebook đang mở trong trình duyệt không bị xóa.")) return;
+      try {
+        await window.pagebot.profileLogin.clear(profile.id);
+        activityLog("Đã xóa thông tin đăng nhập Facebook đã lưu của profile.", "success");
+      } catch (error) {
+        activityLog(error?.message || String(error), "error");
+      }
+    });
+
     return card;
   }
 
@@ -186,11 +241,12 @@
     const chatCard = document.getElementById("suggest-reply")?.closest(".card");
     const activityCard = document.querySelector(".activity-card");
     const safetyNote = document.querySelector(".safety-note");
-    const cookieButton = document.getElementById("cookie-tool");
-    if (!apiCard || !proxyCard || !loginCard || !knowledgeCard || !chatCard || !activityCard || !cookieButton) return;
+    const oldCookieButton = document.getElementById("cookie-tool");
+    if (!apiCard || !proxyCard || !loginCard || !knowledgeCard || !chatCard || !activityCard) return;
 
     document.body.dataset.controlCenterReady = "1";
     addStylesheet();
+    if (oldCookieButton) oldCookieButton.style.display = "none";
 
     const originalAutoLabel = document.querySelector(".auto-chat-switch");
     if (originalAutoLabel) originalAutoLabel.classList.add("cc-system-auto-toggle");
@@ -201,7 +257,7 @@
       { id: "proxy", label: "Proxy", icon: "◉" },
       { id: "login", label: "Login FB", icon: "f" },
       { id: "token", label: "Access Token", icon: "🔑" },
-      { id: "cookie", label: "Cookie", icon: "🍪" }
+      { id: "cookie", label: "Phiên FB", icon: "🍪" }
     ];
     const nav = makeNav(navItems);
     const content = document.createElement("div");
@@ -218,14 +274,14 @@
 
     panes.chatbot.appendChild(makeEngineCard());
     if (safetyNote) panes.chatbot.appendChild(safetyNote);
-
     panes.ai.appendChild(apiCard);
     panes.ai.appendChild(knowledgeCard);
     panes.ai.appendChild(chatCard);
     panes.proxy.appendChild(proxyCard);
     panes.login.appendChild(loginCard);
     panes.token.appendChild(makeTokenCard());
-    panes.cookie.appendChild(makeCookieCard(cookieButton));
+    const sessionCard = makeCookieCard();
+    panes.cookie.appendChild(sessionCard);
 
     const activityTitle = activityCard.querySelector(".section-head strong");
     const activitySmall = activityCard.querySelector(".section-head small");
@@ -241,6 +297,7 @@
       nav.querySelectorAll(".cc-nav-button").forEach((button) => {
         button.classList.toggle("active", button.dataset.ccTarget === id);
       });
+      if (id === "cookie") void sessionCard.refreshSessionState?.();
     }
 
     nav.querySelectorAll(".cc-nav-button").forEach((button) => {
@@ -251,9 +308,15 @@
 
     window.pagebot.onEvent((event) => {
       if (!event) return;
-      if (event.type === "active-profile") void setEngine("off", { quiet: true });
-      if (event.type === "browser-state" && event.payload?.supportedChat === false && window.__pagebotChatbotEngine !== "off") {
+      if (event.type === "active-profile") {
         void setEngine("off", { quiet: true });
+        void sessionCard.refreshSessionState?.();
+      }
+      if (event.type === "browser-state") {
+        if (event.payload?.supportedChat === false && window.__pagebotChatbotEngine !== "off") {
+          void setEngine("off", { quiet: true });
+        }
+        if (panes.cookie.classList.contains("active")) void sessionCard.refreshSessionState?.();
       }
     });
   }
