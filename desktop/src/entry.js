@@ -7,8 +7,6 @@ app.commandLine.appendSwitch(
   "WebAuthentication,WebAuthenticationConditionalUI"
 );
 
-// Show the shell immediately. Do not hide the window while waiting for browser
-// or network work: those features are now demand-driven.
 app.on("browser-window-created", (_event, window) => {
   try { window.setBackgroundColor("#f7f9fc"); } catch {}
 });
@@ -29,8 +27,6 @@ function resetManualRuntimeSwitches() {
         profile.autoReply = false;
         changed = true;
       }
-      // Do not restore a diagnostic or random page from the previous session.
-      // Every fresh app run starts the profile from its configured home page.
       if (profile?.startUrl && profile?.lastUrl && profile.lastUrl !== profile.startUrl) {
         profile.lastUrl = profile.startUrl;
         changed = true;
@@ -40,12 +36,8 @@ function resetManualRuntimeSwitches() {
   } catch {}
 }
 
-// Register this before bootstrap's whenReady callback so saved proxy/Auto flags
-// are reset before any profile can be opened.
 app.whenReady().then(resetManualRuntimeSwitches);
 
-// This wrapper is dormant until an AI request is actually made. It adds retry
-// only for transient provider errors and does not perform startup network work.
 const nativeFetch = globalThis.fetch?.bind(globalThis);
 const RETRYABLE_AI_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_AI_ATTEMPTS = 3;
@@ -101,7 +93,5 @@ if (nativeFetch) {
 
 require("./legacy-auto-guard");
 require("./bootstrap");
-require("./profile-login-runtime");
-require("./cookie-tool-runtime");
 require("./chat-runtime");
 require("./chat-snapshot-lite");
