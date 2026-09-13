@@ -9,7 +9,6 @@ app.on("browser-window-created", (_event, window) => {
   try { window.setBackgroundColor("#f7f9fc"); } catch {}
 });
 
-// AI retry wrapper is dormant until an AI request is made.
 const nativeFetch = globalThis.fetch?.bind(globalThis);
 const RETRYABLE_AI_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_AI_ATTEMPTS = 3;
@@ -63,11 +62,9 @@ if (nativeFetch) {
   };
 }
 
-// Must be installed before main.js so the legacy 2.5s loop is captured and remains off.
 require("./legacy-auto-guard");
+require("./sales-followup-runtime");
 
-// Startup path remains short. Conversation readers and the multi-chat browser helper
-// are loaded only when AI/Auto first asks to read a conversation.
 let liteSnapshotLoading = null;
 ipcMain.handle("chat:enable-lite-snapshot", async () => {
   if (!liteSnapshotLoading) {
