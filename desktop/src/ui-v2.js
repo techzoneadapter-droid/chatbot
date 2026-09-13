@@ -21,13 +21,6 @@
     document.head.appendChild(style);
   }
 
-  function removeCookieCompatibilityNode() {
-    // renderer.js still looks up this id during its one-time event binding. Remove
-    // the invisible compatibility node only after all static scripts are ready.
-    const node = document.getElementById("cookie-tool");
-    if (node) node.remove();
-  }
-
   function setTab(name, remember = true) {
     const valid = new Set(["chat", "ai", "network", "account"]);
     activeTab = valid.has(name) ? name : "chat";
@@ -137,7 +130,6 @@
     bindOnDemandAuto();
     bindActivityActions();
     bindProfileEvents();
-    removeCookieCompatibilityNode();
     markReady();
   });
 })();
