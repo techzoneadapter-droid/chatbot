@@ -54,6 +54,9 @@ contextBridge.exposeInMainWorld("pagebot", {
     openConversation,
     send: (text) => ipcRenderer.invoke("chat:send", text)
   },
+  sales: {
+    analyzeFollowup: (profileId, snapshot, mode) => ipcRenderer.invoke("sales:analyze-followup", profileId, snapshot, mode)
+  },
   ai: {
     suggest: () => ipcRenderer.invoke("ai:suggest"),
     test: () => ipcRenderer.invoke("ai:test"),
