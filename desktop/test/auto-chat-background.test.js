@@ -26,10 +26,16 @@ test('lightweight Auto Chat uses one gated timeout loop without global busy over
   assert.doesNotMatch(auto, /setInterval\(/);
 });
 
-test('chat override runtimes are not loaded at startup', () => {
+test('current Business Suite snapshot reader stays demand-driven', () => {
   const entry = read('src/entry.js');
-  assert.doesNotMatch(entry, /require\("\.\/chat-snapshot-lite"\)/);
+  const preload = read('src/preload.js');
+  assert.doesNotMatch(entry, /^require\("\.\/chat-snapshot-lite"\);/m);
   assert.doesNotMatch(entry, /require\("\.\/chat-runtime"\)/);
+  assert.match(entry, /ipcMain\.handle\("chat:enable-lite-snapshot"/);
+  assert.match(entry, /require\("\.\/chat-snapshot-lite"\)/);
+  assert.match(preload, /ensureLiteSnapshotReader/);
+  assert.match(preload, /chat:enable-lite-snapshot/);
+  assert.match(preload, /snapshot: readChatSnapshot/);
 });
 
 test('Auto script itself is lazy-loaded only after user interaction', () => {
