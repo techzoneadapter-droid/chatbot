@@ -22,6 +22,16 @@ async function readChatSnapshot() {
   return ipcRenderer.invoke("chat:snapshot");
 }
 
+async function listConversations() {
+  await ensureLiteSnapshotReader();
+  return ipcRenderer.invoke("chat:list-conversations");
+}
+
+async function openConversation(locator) {
+  await ensureLiteSnapshotReader();
+  return ipcRenderer.invoke("chat:open-conversation", locator);
+}
+
 contextBridge.exposeInMainWorld("pagebot", {
   profiles: {
     list: () => ipcRenderer.invoke("profiles:list"),
@@ -40,6 +50,8 @@ contextBridge.exposeInMainWorld("pagebot", {
   },
   chat: {
     snapshot: readChatSnapshot,
+    listConversations,
+    openConversation,
     send: (text) => ipcRenderer.invoke("chat:send", text)
   },
   ai: {
