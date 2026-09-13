@@ -9,5 +9,6 @@ test("desktop entry shows a lightweight shell without forcing network work", () 
   assert.doesNotMatch(source, /disable-quic/);
   assert.match(source, /setBackgroundColor\("#f7f9fc"\)/);
   assert.doesNotMatch(source, /window\.hide\(\)/);
-  assert.match(source, /AI retry wrapper is dormant until an AI request is made/i);
+  assert.match(source, /const nativeFetch = globalThis\.fetch/);
+  assert.doesNotMatch(source, /^\s*fetch\(/m);
 });
