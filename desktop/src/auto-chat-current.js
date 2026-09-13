@@ -1,14 +1,20 @@
 (() => {
   const POLL_MS = 6500;
-  const QUIET_MS = 950;
-  const MAX_STABLE_PASSES = 3;
+  const CUSTOMER_SETTLE_MS = 2200;
+  const REQUIRED_STABLE_PASSES = 2;
+  const MAX_STABLE_PASSES = 6;
   const MAX_SCAN_PER_CYCLE = 3;
   const FOLLOWUP_COOLDOWN_MS = 45 * 60 * 1000;
-  const MAX_FOLLOWUPS_PER_DAY = 3;
+  const MAX_FOLLOWUPS_PER_DAY = 1;
+  const DEFAULT_AI_COOLDOWN_MS = 60 * 1000;
+
   let activationId = 0;
   let timer = null;
   let busy = false;
   let roundRobinCursor = 0;
+  let aiCooldownUntil = 0;
+  let lastCooldownLogUntil = 0;
+
   const conversationStates = new Map();
   const lastSentText = new Map();
   const processingKeys = new Set();
@@ -80,8 +86,33 @@
     return Boolean(plan.hasOrderIntent && plan.orderConfirmed && plan.hasPhone && plan.hasName && plan.hasAddress && plan.hasOrderDetails);
   }
 
+  function parseRetryDelayMs(text) {
+    const value = String(text || "");
+    const match = value.match(/retry\s+(?:in|after)\s+([0-9]+(?:\.[0-9]+)?)\s*s/i);
+    if (match) {
+      const seconds = Number.parseFloat(match[1]);
+      if (Number.isFinite(seconds) && seconds > 0) return Math.min(10 * 60 * 1000, Math.ceil(seconds * 1000) + 2000);
+    }
+    return DEFAULT_AI_COOLDOWN_MS;
+  }
+
+  function enterAiCooldown(errorTextValue) {
+    const delay = parseRetryDelayMs(errorTextValue);
+    aiCooldownUntil = Math.max(aiCooldownUntil, Date.now() + delay);
+    if (aiCooldownUntil > lastCooldownLogUntil) {
+      lastCooldownLogUntil = aiCooldownUntil;
+      if (typeof log === "function") {
+        log(`AI đang bị giới hạn 429. PageBot tạm dừng gọi AI khoảng ${Math.ceil(delay / 1000)} giây để tránh retry/spam request.`, "warn");
+      }
+    }
+  }
+
+  function aiCoolingDown() {
+    return Date.now() < aiCooldownUntil;
+  }
+
   function canFollowUpOld(convState, now = Date.now()) {
-    if (convState?.complete) return false;
+    if (convState?.complete || convState?.waitingForCustomer) return false;
     const dayStart = new Date(now);
     dayStart.setHours(0, 0, 0, 0);
     const today = Array.isArray(convState?.followupTimes)
@@ -102,17 +133,27 @@
   async function waitForStableIncoming(initial, id) {
     let current = initial;
     let previousSignature = incomingSignature(initial);
+    let stablePasses = 0;
+
     for (let pass = 0; pass < MAX_STABLE_PASSES; pass += 1) {
-      await wait(QUIET_MS);
+      await wait(CUSTOMER_SETTLE_MS);
       if (!canRun(id)) return null;
+
       const next = await window.pagebot.chat.snapshot();
       if (!next?.incoming || !sameConversation(current, next)) return null;
       const nextSignature = incomingSignature(next);
-      if (nextSignature === previousSignature) return next;
-      current = next;
-      previousSignature = nextSignature;
+
+      if (nextSignature === previousSignature) {
+        stablePasses += 1;
+        current = next;
+        if (stablePasses >= REQUIRED_STABLE_PASSES) return next;
+      } else {
+        stablePasses = 0;
+        current = next;
+        previousSignature = nextSignature;
+      }
     }
-    return current;
+    return null;
   }
 
   function clearTimer() {
@@ -128,7 +169,7 @@
   function schedule(id, delay = POLL_MS) {
     clearTimer();
     if (!canRun(id)) return;
-    timer = setTimeout(() => void tick(id), delay);
+    timer = setTimeout(() => void tick(id), Math.max(250, delay));
   }
 
   async function openCandidate(candidate) {
@@ -144,7 +185,7 @@
   }
 
   async function processCandidate(candidate, id) {
-    if (!canRun(id)) return;
+    if (!canRun(id) || aiCoolingDown()) return;
     const candidateKey = candidate?.key || "current-chat";
     if (processingKeys.has(candidateKey)) return;
     processingKeys.add(candidateKey);
@@ -175,36 +216,51 @@
           salesState: null,
           complete: false,
           lastFollowupAt: 0,
-          followupTimes: []
+          followupTimes: [],
+          waitingForCustomer: false,
+          sentOnSignature: ""
         };
         conversationStates.set(stateKey, convState);
       }
 
-      if (convState.complete && signature === convState.seenSignature) return;
-      const hasNewIncoming = Boolean(convState.seenSignature && signature !== convState.seenSignature);
-      if (!hasNewIncoming && !isFirstVisit && signature === convState.lastAnalyzedSignature && !canFollowUpOld(convState)) return;
+      const signatureChanged = Boolean(convState.seenSignature && signature !== convState.seenSignature);
+      if (convState.waitingForCustomer) {
+        if (!signatureChanged) return;
+        // Customer has replied after our previous message. Unlock exactly once,
+        // then wait for their whole burst of messages to settle before answering.
+        convState.waitingForCustomer = false;
+        convState.lastAnalyzedSignature = "";
+      }
+
+      if (convState.complete && !signatureChanged) return;
+      if (!signatureChanged && !isFirstVisit && signature === convState.lastAnalyzedSignature && !canFollowUpOld(convState)) return;
 
       let stable = first;
-      if (hasNewIncoming) {
+      const needsCustomerSettle = signatureChanged || convState.sentOnSignature;
+      if (needsCustomerSettle) {
         stable = await waitForStableIncoming(first, id);
         if (!stable || !canRun(id) || !sameConversation(first, stable)) return;
         signature = incomingSignature(stable);
         if (!signature) return;
       }
 
+      const hasNewIncoming = Boolean(convState.seenSignature && signature !== convState.seenSignature);
       const mode = hasNewIncoming ? "new_message" : "followup_old";
       const customerName = stable.title || candidate?.label || "khách";
+
       if (typeof log === "function") {
         log(
           mode === "new_message"
-            ? `[${customerName}] Có tin mới: ${String(stable.latestText).slice(0, 120)}`
-            : `[${customerName}] Đang rà lại hội thoại cũ để xem còn thiếu bước chốt đơn hay thông tin giao hàng.`,
+            ? `[${customerName}] Khách đã ngừng nhắn tạm thời, bắt đầu xử lý cụm tin mới.`
+            : `[${customerName}] Đang rà lại hội thoại cũ chưa hoàn tất.`,
           "info"
         );
       }
 
+      if (aiCoolingDown()) return;
       const plan = await analyzeSales(stable, mode);
       if (!canRun(id)) return;
+
       convState.lastAnalyzedSignature = signature;
       convState.salesState = plan;
       convState.complete = salesComplete(plan);
@@ -227,9 +283,10 @@
         if (typeof log === "function") log(`[${customerName}] Hội thoại đã đổi trước lúc gửi. Hủy để tránh nhắn nhầm.`, "warn");
         return;
       }
+
       const latestSignature = incomingSignature(latest);
       if (latestSignature !== signature) {
-        if (typeof log === "function") log(`[${customerName}] Khách vừa nhắn thêm. Hủy câu cũ và phân tích lại ở vòng tiếp theo.`, "warn");
+        if (typeof log === "function") log(`[${customerName}] Khách vẫn đang nhắn thêm. Hủy câu hiện tại và chờ khách nói xong.`, "warn");
         convState.seenSignature = latestSignature || convState.seenSignature;
         convState.lastAnalyzedSignature = "";
         return;
@@ -244,7 +301,6 @@
         : [];
       if (recentOutgoing.some((item) => similarText(text, item)) || similarText(text, lastSentText.get(stateKey))) {
         if (typeof log === "function") log(`[${customerName}] Đã chặn câu trả lời trùng.`, "warn");
-        if (mode === "followup_old") recordFollowUp(convState);
         return;
       }
 
@@ -252,21 +308,28 @@
       if (!sent?.ok) throw new Error(sent?.reason || "Không gửi được tin nhắn vào Facebook.");
 
       convState.handledSignature = signature;
+      convState.sentOnSignature = signature;
+      convState.waitingForCustomer = true;
       if (mode === "followup_old") recordFollowUp(convState);
       lastSentText.set(stateKey, text);
+
       const output = document.getElementById("reply-output");
       if (output) output.value = text;
       if (typeof state !== "undefined") state.lastSuggestion = text;
       if (typeof log === "function") {
         const salesLabel = plan?.status ? ` · ${plan.status}` : "";
         log(
-          `[${customerName}] ${sent.verified ? "Đã gửi" : "Đã thao tác gửi"}${salesLabel}.`,
+          `[${customerName}] ${sent.verified ? "Đã gửi" : "Đã thao tác gửi"}${salesLabel}. Đang chờ khách trả lời, sẽ không nhắn thêm vào thread này trước khi có tin mới.`,
           sent.verified ? "success" : "warn"
         );
       }
     } catch (error) {
       const text = cleanError(error);
-      if (typeof log === "function") log(`Đa luồng: ${text}`, "error");
+      if (/\b429\b|quota|rate limit|exceeded your current/i.test(text)) {
+        enterAiCooldown(text);
+      } else if (typeof log === "function") {
+        log(`Đa luồng: ${text}`, "error");
+      }
     } finally {
       processingKeys.delete(candidateKey);
     }
@@ -286,7 +349,11 @@
 
   async function tick(id) {
     if (!canRun(id)) return;
+    if (aiCoolingDown()) {
+      return schedule(id, Math.min(POLL_MS, Math.max(1000, aiCooldownUntil - Date.now())));
+    }
     if (busy) return schedule(id, 1000);
+
     busy = true;
     try {
       let candidates = [];
@@ -300,17 +367,20 @@
         visibleConversations: Array.isArray(candidates) ? candidates.length : 0,
         batchSize: batch.length,
         trackedConversations: conversationStates.size,
+        aiCooldownUntil,
         at: Date.now()
       };
+
       for (const candidate of batch) {
-        if (!canRun(id)) break;
+        if (!canRun(id) || aiCoolingDown()) break;
         await processCandidate(candidate, id);
       }
     } catch (error) {
       if (typeof log === "function") log(`Đa luồng: ${cleanError(error)}`, "error");
     } finally {
       busy = false;
-      schedule(id);
+      const delay = aiCoolingDown() ? Math.max(1000, aiCooldownUntil - Date.now()) : POLL_MS;
+      schedule(id, delay);
     }
   }
 
@@ -321,7 +391,7 @@
     processingKeys.clear();
     if (!canRun(id)) return;
     if (typeof log === "function") {
-      log("Auto Sales đã bật. PageBot sẽ rà cả hội thoại cũ chưa hoàn tất, theo dõi trạng thái từng khách và khóa thao tác gửi để không trộn thread.", "success");
+      log("Auto Sales đã bật. Bot chỉ trả lời sau khi cụm tin của khách ổn định; sau mỗi lần gửi sẽ chờ khách phản hồi rồi mới được nhắn tiếp.", "success");
     }
     schedule(id, 700);
   }
