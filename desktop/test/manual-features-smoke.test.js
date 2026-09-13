@@ -37,12 +37,13 @@ test("cookie bridge is not exposed by preload", () => {
   assert.doesNotMatch(source, /cookieTool|cookie:import|cookie:export|cookie:clear/);
 });
 
-test("startup entry does not load cookie, duplicate login, or duplicate chat runtimes", () => {
+test("startup entry does not load cookie, duplicate login, or old duplicate chat runtime", () => {
   const source = read("src/entry.js");
   assert.doesNotMatch(source, /cookie-tool-runtime/);
   assert.doesNotMatch(source, /profile-login-runtime/);
-  assert.doesNotMatch(source, /chat-runtime/);
-  assert.doesNotMatch(source, /chat-snapshot-lite/);
+  assert.doesNotMatch(source, /^require\("\.\/chat-runtime"\);/m);
+  assert.doesNotMatch(source, /^require\("\.\/chat-snapshot-lite"\);/m);
+  assert.match(source, /chat:enable-lite-snapshot/);
 });
 
 test("DEV launcher starts Electron directly", () => {

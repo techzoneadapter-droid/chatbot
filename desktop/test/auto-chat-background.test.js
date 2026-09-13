@@ -17,7 +17,8 @@ test('legacy Auto Chat interval is captured and stays off unless explicitly enab
 
 test('lightweight Auto Chat uses one gated timeout loop without global busy overlay', () => {
   const auto = read('src/auto-chat-current.js');
-  assert.match(auto, /const POLL_MS = 6000/);
+  assert.match(auto, /const POLL_MS = 6500/);
+  assert.match(auto, /MAX_SCAN_PER_CYCLE = 3/);
   assert.match(auto, /__pagebotChatbotEngine === "light"/);
   assert.match(auto, /window\.pagebot\.chat\.snapshot\(\)/);
   assert.match(auto, /window\.pagebot\.ai\.suggest\(\)/);
@@ -26,10 +27,17 @@ test('lightweight Auto Chat uses one gated timeout loop without global busy over
   assert.doesNotMatch(auto, /setInterval\(/);
 });
 
-test('chat override runtimes are not loaded at startup', () => {
+test('current Business Suite snapshot reader stays demand-driven', () => {
   const entry = read('src/entry.js');
-  assert.doesNotMatch(entry, /require\("\.\/chat-snapshot-lite"\)/);
-  assert.doesNotMatch(entry, /require\("\.\/chat-runtime"\)/);
+  const preload = read('src/preload.js');
+  assert.doesNotMatch(entry, /^require\("\.\/chat-snapshot-lite"\);/m);
+  assert.doesNotMatch(entry, /^require\("\.\/chat-runtime"\);/m);
+  assert.match(entry, /ipcMain\.handle\("chat:enable-lite-snapshot"/);
+  assert.match(entry, /require\("\.\/chat-snapshot-lite"\)/);
+  assert.match(entry, /require\("\.\/multi-chat-runtime"\)/);
+  assert.match(preload, /ensureLiteSnapshotReader/);
+  assert.match(preload, /chat:enable-lite-snapshot/);
+  assert.match(preload, /snapshot: readChatSnapshot/);
 });
 
 test('Auto script itself is lazy-loaded only after user interaction', () => {
