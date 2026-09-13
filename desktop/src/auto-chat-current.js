@@ -3,6 +3,8 @@
   const QUIET_MS = 950;
   const MAX_STABLE_PASSES = 3;
   const MAX_SCAN_PER_CYCLE = 3;
+  const FOLLOWUP_COOLDOWN_MS = 45 * 60 * 1000;
+  const MAX_FOLLOWUPS_PER_DAY = 3;
   let activationId = 0;
   let timer = null;
   let busy = false;
@@ -68,6 +70,35 @@
     return `${candidate?.key || "current"}::${conversationKey(snapshot)}`;
   }
 
+  function activeProfileId() {
+    return typeof state !== "undefined" && state.activeProfile?.id ? state.activeProfile.id : null;
+  }
+
+  function salesComplete(plan) {
+    if (!plan) return false;
+    if (plan.status === "done" || plan.status === "order_confirmed") return true;
+    return Boolean(plan.hasOrderIntent && plan.orderConfirmed && plan.hasPhone && plan.hasName && plan.hasAddress && plan.hasOrderDetails);
+  }
+
+  function canFollowUpOld(convState, now = Date.now()) {
+    if (convState?.complete) return false;
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const today = Array.isArray(convState?.followupTimes)
+      ? convState.followupTimes.filter((ts) => Number(ts) >= dayStart.getTime() && Number(ts) <= now)
+      : [];
+    if (today.length >= MAX_FOLLOWUPS_PER_DAY) return false;
+    const last = today.length ? Math.max(...today) : Number(convState?.lastFollowupAt || 0);
+    return !last || now - last >= FOLLOWUP_COOLDOWN_MS;
+  }
+
+  function recordFollowUp(convState) {
+    const now = Date.now();
+    const times = Array.isArray(convState.followupTimes) ? convState.followupTimes : [];
+    convState.lastFollowupAt = now;
+    convState.followupTimes = [...times, now].slice(-12);
+  }
+
   async function waitForStableIncoming(initial, id) {
     let current = initial;
     let previousSignature = incomingSignature(initial);
@@ -100,32 +131,16 @@
     timer = setTimeout(() => void tick(id), delay);
   }
 
-  async function recoverModelAndSuggest() {
-    try {
-      return await window.pagebot.ai.suggest();
-    } catch (error) {
-      const text = cleanError(error);
-      if (/429|quota|rate limit|exceeded your current quota/i.test(text)) throw error;
-      if (!/(model|404|503|overload|high demand|unavailable|not found)/i.test(text)) throw error;
-      if (typeof state === "undefined" || !state.activeProfile) throw error;
-
-      const provider = document.getElementById("ai-provider")?.value || state.activeProfile.aiProvider || "gemini";
-      const available = await window.pagebot.ai.models(provider);
-      const models = Array.isArray(available?.models) ? available.models : [];
-      const model = available?.recommended || models[0];
-      if (!model) throw error;
-
-      state.activeProfile = await window.pagebot.profiles.update(state.activeProfile.id, { aiModel: model });
-      const modelInput = document.getElementById("ai-model");
-      if (modelInput) modelInput.value = model;
-      if (typeof log === "function") log(`Đa luồng đổi sang model khả dụng: ${model}`, "warn");
-      return window.pagebot.ai.suggest();
-    }
-  }
-
   async function openCandidate(candidate) {
     if (!candidate?.locator || !window.pagebot.chat.openConversation) return { ok: true };
     return window.pagebot.chat.openConversation(candidate.locator);
+  }
+
+  async function analyzeSales(snapshot, mode) {
+    const profileId = activeProfileId();
+    if (!profileId) throw new Error("Chưa xác định được profile đang mở.");
+    if (!window.pagebot.sales?.analyzeFollowup) throw new Error("Sales follow-up runtime chưa sẵn sàng.");
+    return window.pagebot.sales.analyzeFollowup(profileId, snapshot, mode);
   }
 
   async function processCandidate(candidate, id) {
@@ -138,8 +153,7 @@
     let signature = "";
     try {
       const opened = await openCandidate(candidate);
-      if (!opened?.ok) return;
-      if (!canRun(id)) return;
+      if (!opened?.ok || !canRun(id)) return;
 
       const first = await window.pagebot.chat.snapshot();
       if (!first?.supportedChat || !first?.inputFound || !first.latestText || !first.incoming) return;
@@ -150,86 +164,109 @@
       if (!signature) return;
 
       let convState = conversationStates.get(stateKey);
+      const isFirstVisit = !convState;
       if (!convState) {
-        conversationStates.set(stateKey, {
-          seenSignature: signature,
+        convState = {
+          seenSignature: "",
           handledSignature: "",
+          lastAnalyzedSignature: "",
           title: first.title || candidate?.label || "",
-          locator: candidate?.locator || null
-        });
+          locator: candidate?.locator || null,
+          salesState: null,
+          complete: false,
+          lastFollowupAt: 0,
+          followupTimes: []
+        };
+        conversationStates.set(stateKey, convState);
+      }
+
+      if (convState.complete && signature === convState.seenSignature) return;
+      const hasNewIncoming = Boolean(convState.seenSignature && signature !== convState.seenSignature);
+      if (!hasNewIncoming && !isFirstVisit && signature === convState.lastAnalyzedSignature && !canFollowUpOld(convState)) return;
+
+      let stable = first;
+      if (hasNewIncoming) {
+        stable = await waitForStableIncoming(first, id);
+        if (!stable || !canRun(id) || !sameConversation(first, stable)) return;
+        signature = incomingSignature(stable);
+        if (!signature) return;
+      }
+
+      const mode = hasNewIncoming ? "new_message" : "followup_old";
+      const customerName = stable.title || candidate?.label || "khách";
+      if (typeof log === "function") {
+        log(
+          mode === "new_message"
+            ? `[${customerName}] Có tin mới: ${String(stable.latestText).slice(0, 120)}`
+            : `[${customerName}] Đang rà lại hội thoại cũ để xem còn thiếu bước chốt đơn hay thông tin giao hàng.`,
+          "info"
+        );
+      }
+
+      const plan = await analyzeSales(stable, mode);
+      if (!canRun(id)) return;
+      convState.lastAnalyzedSignature = signature;
+      convState.salesState = plan;
+      convState.complete = salesComplete(plan);
+      convState.seenSignature = signature;
+
+      if (convState.complete && mode === "followup_old") {
+        if (typeof log === "function") log(`[${customerName}] Hội thoại đã hoàn tất, không follow-up lại.`, "success");
         return;
       }
-      if (signature === convState.seenSignature || signature === convState.handledSignature) return;
+      if (plan?.shouldFollowUp === false) return;
+      if (mode === "followup_old" && !canFollowUpOld(convState)) return;
 
-      const stable = await waitForStableIncoming(first, id);
-      if (!stable || !canRun(id)) return;
-      const stableSignature = incomingSignature(stable);
-      if (!stableSignature || stableSignature === convState.handledSignature) return;
-      if (!sameConversation(first, stable)) return;
+      const text = String(plan?.reply || "").trim();
+      if (!text) return;
 
-      convState.seenSignature = stableSignature;
-      const customerName = stable.title || candidate?.label || "khách";
-      if (typeof log === "function") log(`[${customerName}] Có tin mới: ${String(stable.latestText).slice(0, 120)}`, "info");
-
-      const result = await recoverModelAndSuggest();
-      if (!canRun(id)) return;
-      const text = String(result?.text || "").trim();
-      if (!text) throw new Error("AI không tạo được câu trả lời.");
-
-      // Global send lane: DOM interaction is always serialized. Re-open the exact
-      // candidate and re-read it before sending, so an AI result can never leak
-      // into another customer's thread after Facebook reorders the inbox.
       const reopened = await openCandidate(candidate);
       if (!reopened?.ok || !canRun(id)) return;
       const latest = await window.pagebot.chat.snapshot();
       if (!latest?.incoming || !sameConversation(stable, latest)) {
-        if (typeof log === "function") log(`[${customerName}] Hội thoại đã đổi trước lúc gửi. Hủy câu trả lời để tránh nhắn nhầm.`, "warn");
+        if (typeof log === "function") log(`[${customerName}] Hội thoại đã đổi trước lúc gửi. Hủy để tránh nhắn nhầm.`, "warn");
         return;
       }
       const latestSignature = incomingSignature(latest);
-      if (latestSignature !== stableSignature) {
-        if (typeof log === "function") log(`[${customerName}] Khách vừa nhắn thêm. Hủy bản cũ và chờ vòng mới.`, "warn");
+      if (latestSignature !== signature) {
+        if (typeof log === "function") log(`[${customerName}] Khách vừa nhắn thêm. Hủy câu cũ và phân tích lại ở vòng tiếp theo.`, "warn");
         convState.seenSignature = latestSignature || convState.seenSignature;
+        convState.lastAnalyzedSignature = "";
         return;
       }
-      const revalidatedKey = candidateStateKey(candidate, latest);
-      if (revalidatedKey !== stateKey) {
+      if (candidateStateKey(candidate, latest) !== stateKey) {
         if (typeof log === "function") log(`[${customerName}] Thread key không còn trùng. Không gửi.`, "warn");
         return;
       }
 
       const recentOutgoing = Array.isArray(latest.messages)
-        ? latest.messages.filter((item) => item?.direction === "outgoing").slice(-5).map((item) => item?.text)
+        ? latest.messages.filter((item) => item?.direction === "outgoing").slice(-6).map((item) => item?.text)
         : [];
       if (recentOutgoing.some((item) => similarText(text, item)) || similarText(text, lastSentText.get(stateKey))) {
-        convState.handledSignature = stableSignature;
         if (typeof log === "function") log(`[${customerName}] Đã chặn câu trả lời trùng.`, "warn");
+        if (mode === "followup_old") recordFollowUp(convState);
         return;
       }
 
       const sent = await window.pagebot.chat.send(text);
       if (!sent?.ok) throw new Error(sent?.reason || "Không gửi được tin nhắn vào Facebook.");
 
-      convState.handledSignature = stableSignature;
+      convState.handledSignature = signature;
+      if (mode === "followup_old") recordFollowUp(convState);
       lastSentText.set(stateKey, text);
       const output = document.getElementById("reply-output");
       if (output) output.value = text;
       if (typeof state !== "undefined") state.lastSuggestion = text;
       if (typeof log === "function") {
+        const salesLabel = plan?.status ? ` · ${plan.status}` : "";
         log(
-          `[${customerName}] ${sent.verified ? "Đã trả lời xong." : "Đã gửi; đang chờ Facebook xác nhận bong bóng."}`,
+          `[${customerName}] ${sent.verified ? "Đã gửi" : "Đã thao tác gửi"}${salesLabel}.`,
           sent.verified ? "success" : "warn"
         );
       }
     } catch (error) {
       const text = cleanError(error);
-      if (/429|quota|rate limit|exceeded your current quota/i.test(text) && stateKey && signature) {
-        const convState = conversationStates.get(stateKey);
-        if (convState) convState.handledSignature = signature;
-        if (typeof log === "function") log(`Đa luồng dừng retry thread này vì API đang hết quota/429.`, "error");
-      } else if (typeof log === "function") {
-        log(`Đa luồng: ${text}`, "error");
-      }
+      if (typeof log === "function") log(`Đa luồng: ${text}`, "error");
     } finally {
       processingKeys.delete(candidateKey);
     }
@@ -262,6 +299,7 @@
       window.__pagebotMultiChatState = {
         visibleConversations: Array.isArray(candidates) ? candidates.length : 0,
         batchSize: batch.length,
+        trackedConversations: conversationStates.size,
         at: Date.now()
       };
       for (const candidate of batch) {
@@ -283,7 +321,7 @@
     processingKeys.clear();
     if (!canRun(id)) return;
     if (typeof log === "function") {
-      log("Auto đa luồng đã bật. Mỗi khách có state riêng; thao tác gửi được khóa tuần tự để không trộn hội thoại.", "success");
+      log("Auto Sales đã bật. PageBot sẽ rà cả hội thoại cũ chưa hoàn tất, theo dõi trạng thái từng khách và khóa thao tác gửi để không trộn thread.", "success");
     }
     schedule(id, 700);
   }
