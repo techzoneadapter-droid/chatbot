@@ -1,43 +1,13 @@
 const { app } = require("electron");
-const fs = require("node:fs");
-const path = require("node:path");
 
 app.commandLine.appendSwitch(
   "disable-features",
   "WebAuthentication,WebAuthenticationConditionalUI"
 );
 
-// Show the shell immediately. Heavy features remain demand-driven.
 app.on("browser-window-created", (_event, window) => {
   try { window.setBackgroundColor("#f7f9fc"); } catch {}
 });
-
-function resetManualRuntimeSwitches() {
-  try {
-    const file = path.join(app.getPath("userData"), "pagebot-data.json");
-    if (!fs.existsSync(file)) return;
-    const data = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (!Array.isArray(data?.profiles)) return;
-    let changed = false;
-    for (const profile of data.profiles) {
-      if (profile?.proxy?.enabled) {
-        profile.proxy.enabled = false;
-        changed = true;
-      }
-      if (profile?.autoReply) {
-        profile.autoReply = false;
-        changed = true;
-      }
-      if (profile?.startUrl && profile?.lastUrl && profile.lastUrl !== profile.startUrl) {
-        profile.lastUrl = profile.startUrl;
-        changed = true;
-      }
-    }
-    if (changed) fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
-  } catch {}
-}
-
-app.whenReady().then(resetManualRuntimeSwitches);
 
 // AI retry wrapper is dormant until an AI request is made.
 const nativeFetch = globalThis.fetch?.bind(globalThis);
@@ -93,7 +63,9 @@ if (nativeFetch) {
   };
 }
 
+// Must be installed before main.js so the legacy 2.5s loop is captured and remains off.
 require("./legacy-auto-guard");
+
+// Startup path is intentionally short: one bootstrap only. Chat snapshot/runtime
+// overrides are no longer loaded in the background at launch.
 require("./bootstrap");
-require("./chat-runtime");
-require("./chat-snapshot-lite");

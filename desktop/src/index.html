@@ -4,45 +4,51 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PageBot Desktop DEV</title>
+  <title>PageBot AI Studio</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="proxy.css" />
   <link rel="stylesheet" href="panel-toggle.css" />
+  <link rel="stylesheet" href="styles-v2.css" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">PB</div>
-        <div>
-          <strong>PageBot Desktop</strong>
-          <span>DEV · Facebook + AI</span>
+        <div class="brand-copy">
+          <strong>PageBot</strong>
+          <span>AI Browser Studio</span>
         </div>
+        <span class="local-badge">LOCAL</span>
       </div>
 
-      <button id="new-profile" class="primary full">+ Tạo profile trình duyệt</button>
+      <button id="new-profile" class="primary full new-profile-button">＋ Tạo profile</button>
 
       <form id="profile-form" class="create-profile-panel hidden">
         <div class="create-title">
-          <strong>Profile mới</strong>
+          <strong>Profile trình duyệt mới</strong>
           <button id="cancel-profile" type="button" class="mini-close" title="Đóng">×</button>
         </div>
         <label>
           <span>Tên profile</span>
-          <input id="profile-name" name="name" required placeholder="Ví dụ: FB Bao / Page TNANO" />
+          <input id="profile-name" name="name" required placeholder="Ví dụ: Page TNANO" />
         </label>
         <label>
           <span>Trang khởi động</span>
           <input name="startUrl" value="https://business.facebook.com/latest/inbox" />
         </label>
-        <p class="help">Mỗi profile giữ cookie và phiên đăng nhập Facebook riêng.</p>
-        <button id="create-profile-submit" type="submit" class="primary full">Tạo và mở ngay</button>
+        <p class="help">Mỗi profile có phiên Facebook, proxy và cấu hình AI riêng.</p>
+        <button id="create-profile-submit" type="submit" class="primary full">Tạo & mở profile</button>
       </form>
 
-      <div class="section-title">Profiles</div>
+      <div class="section-title-row">
+        <div class="section-title">Profiles</div>
+        <span class="section-hint">chỉ mở khi bấm</span>
+      </div>
       <div id="profiles" class="profiles"></div>
       <div class="sidebar-note">
-        Mỗi profile có vùng đăng nhập riêng. Không chia sẻ cookie giữa các tài khoản Facebook.
+        <b>Chế độ nhẹ</b>
+        <span>Khởi động không mở Facebook, không chạy proxy, AI hay Auto Chat. Bạn dùng gì thì PageBot mới bật phần đó.</span>
       </div>
     </aside>
 
@@ -54,18 +60,23 @@
         <button id="home" title="Trang mặc định">⌂</button>
       </div>
       <form id="url-form" class="url-form">
-        <input id="url" spellcheck="false" placeholder="https://business.facebook.com/latest/inbox" />
+        <input id="url" spellcheck="false" placeholder="Tìm kiếm hoặc nhập địa chỉ web" />
       </form>
-      <button id="cookie-tool" class="cookie-tool" type="button" title="Mở Get Cookie For FPlus" aria-label="Mở Get Cookie For FPlus">🍪 Cookie</button>
+      <button id="cookie-tool" class="hidden" type="button" hidden disabled aria-hidden="true" tabindex="-1"></button>
       <div id="browser-loading" class="browser-loading"></div>
     </header>
 
     <main class="workspace-empty">
       <div class="workspace-empty-card">
         <div class="workspace-icon">PB</div>
-        <h1>PageBot Desktop</h1>
-        <p>Chọn một profile ở bên trái khi bạn muốn mở Facebook.</p>
-        <span>App không tự mở browser, proxy hay Auto Chat khi khởi động.</span>
+        <span class="workspace-kicker">PAGEBOT AI BROWSER</span>
+        <h1>Sẵn sàng khi bạn cần</h1>
+        <p>Chọn một profile ở bên trái để mở Facebook. Không có trình duyệt hay tác vụ tự động nào chạy ngầm lúc khởi động.</p>
+        <div class="idle-pills">
+          <span>0 browser nền</span>
+          <span>0 AI request</span>
+          <span>0 auto polling</span>
+        </div>
       </div>
     </main>
 
@@ -75,14 +86,25 @@
           <span class="eyebrow">TRỢ LÝ AI</span>
           <h2 id="active-profile-name">Chưa mở profile</h2>
         </div>
-        <button id="toggle-ai-panel" class="panel-toggle-button" type="button" title="Thu gọn trợ lý AI" aria-label="Thu gọn trợ lý AI" aria-expanded="true">›</button>
+        <button id="toggle-ai-panel" class="panel-toggle-button" type="button" title="Thu gọn bảng công cụ" aria-label="Thu gọn bảng công cụ" aria-expanded="true">›</button>
       </div>
 
+      <nav class="tool-tabs" aria-label="Công cụ profile">
+        <button type="button" class="tool-tab active" data-tool-tab="chat"><span>✦</span> Chat</button>
+        <button type="button" class="tool-tab" data-tool-tab="ai"><span>AI</span> Cấu hình</button>
+        <button type="button" class="tool-tab" data-tool-tab="network"><span>↗</span> Mạng</button>
+        <button type="button" class="tool-tab" data-tool-tab="account"><span>f</span> Login</button>
+      </nav>
+
       <div class="panel-scroll">
-        <section class="card compact">
+        <section class="card compact" data-tool-pane="ai" id="ai-api-card">
+          <div class="card-title-row">
+            <div><strong>Kết nối AI</strong><small>Chỉ gọi API khi bạn bấm dùng AI</small></div>
+            <span id="api-status" class="status-badge warn">Chưa có API key</span>
+          </div>
           <div class="two-col">
             <label>
-              <span>AI</span>
+              <span>Nhà cung cấp</span>
               <select id="ai-provider">
                 <option value="gemini">Gemini</option>
                 <option value="meta">Meta Model API</option>
@@ -92,9 +114,6 @@
               <span>Model</span>
               <input id="ai-model" value="gemini-3.8-flash" />
             </label>
-          </div>
-          <div class="api-row">
-            <span id="api-status" class="status-badge warn">Chưa có API key</span>
           </div>
           <label>
             <span>API key</span>
@@ -107,18 +126,18 @@
           </div>
         </section>
 
-        <section class="card compact" id="proxy-card">
+        <section class="card compact" id="proxy-card" data-tool-pane="network">
           <div class="section-head">
             <div>
-              <strong>Proxy riêng của profile</strong>
-              <small>Mỗi profile dùng cấu hình mạng độc lập</small>
+              <strong>Proxy riêng</strong>
+              <small>Không dùng proxy cho tới khi bạn bật và áp dụng</small>
             </div>
             <span id="proxy-status" class="status-badge ok">Kết nối trực tiếp</span>
           </div>
           <label class="switch-wrap proxy-switch">
             <input id="proxy-enabled" type="checkbox" />
             <span class="switch"></span>
-            <b>Dùng proxy</b>
+            <b>Dùng proxy cho profile này</b>
           </label>
           <div class="two-col proxy-grid-top">
             <label>
@@ -140,26 +159,26 @@
           <div class="two-col">
             <label>
               <span>Username</span>
-              <input id="proxy-username" autocomplete="off" placeholder="Nếu proxy có tài khoản" />
+              <input id="proxy-username" autocomplete="off" placeholder="Nếu có" />
             </label>
             <label>
               <span>Password</span>
-              <input id="proxy-password" type="password" autocomplete="new-password" placeholder="Nếu proxy có mật khẩu" />
+              <input id="proxy-password" type="password" autocomplete="new-password" placeholder="Nếu có" />
             </label>
           </div>
           <div class="button-row">
             <button id="save-proxy" class="secondary">Lưu & áp dụng</button>
-            <button id="test-proxy" class="ghost">Kiểm tra proxy</button>
+            <button id="test-proxy" class="ghost">Kiểm tra</button>
             <button id="disable-proxy" class="ghost danger">Tắt proxy</button>
           </div>
           <div id="proxy-result" class="diagnostics muted proxy-result">Profile này hiện không dùng proxy.</div>
         </section>
 
-        <section class="card compact" id="facebook-login-card">
+        <section class="card compact" id="facebook-login-card" data-tool-pane="account">
           <div class="section-head">
             <div>
-              <strong>Đăng nhập Facebook của profile</strong>
-              <small>Lưu riêng tài khoản + mật khẩu cho từng profile</small>
+              <strong>Đăng nhập Facebook</strong>
+              <small>Thông tin lưu riêng theo từng profile</small>
             </div>
             <span id="fb-login-status" class="status-badge warn">Chưa mở profile</span>
           </div>
@@ -175,7 +194,7 @@
             <span>Mã 2FA hiện tại (nếu Facebook đang hỏi)</span>
             <input id="fb-login-2fa" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" />
           </label>
-          <p class="facebook-login-note">Tài khoản + mật khẩu được mã hóa bằng Windows secure storage. Mã 2FA chỉ dùng cho lần bấm Đăng nhập hiện tại và không được lưu.</p>
+          <p class="facebook-login-note">Tài khoản và mật khẩu được mã hóa bằng Windows secure storage. Mã 2FA không được lưu.</p>
           <div class="facebook-login-actions">
             <button id="save-fb-login" class="secondary">Lưu đăng nhập</button>
             <button id="run-fb-login" class="primary">Đăng nhập</button>
@@ -184,58 +203,59 @@
           <div id="fb-login-result" class="diagnostics muted">Mở một profile để cấu hình đăng nhập Facebook.</div>
         </section>
 
-        <section class="card">
+        <section class="card" data-tool-pane="ai" id="profile-ai-card">
+          <div class="section-head">
+            <div><strong>Dữ liệu riêng của AI</strong><small>Giá, sản phẩm, FAQ và cách nói chuyện</small></div>
+          </div>
           <label>
-            <span>Dữ liệu sản phẩm / giá / FAQ của profile này</span>
-            <textarea id="knowledge" rows="9" placeholder="Ví dụ:\nSản phẩm A - giá 500.000đ\nBảo hành 12 tháng\nPhí ship..."></textarea>
+            <span>Dữ liệu sản phẩm / giá / FAQ</span>
+            <textarea id="knowledge" rows="8" placeholder="Ví dụ:\nSản phẩm A - giá 500.000đ\nBảo hành 12 tháng\nPhí ship..."></textarea>
           </label>
           <label>
             <span>Cách bot nói chuyện</span>
             <textarea id="system-prompt" rows="4" placeholder="Ví dụ: Xưng em, gọi khách là anh/chị, trả lời ngắn gọn."></textarea>
           </label>
           <div class="button-row">
-            <button id="save-profile" class="primary">Lưu cấu hình</button>
+            <button id="save-profile" class="primary">Lưu cấu hình AI</button>
             <button id="delete-profile" class="ghost danger">Xóa profile</button>
           </div>
         </section>
 
-        <section class="card">
+        <section class="card hero-chat-card" data-tool-pane="chat" id="chat-card">
           <div class="section-head chat-head">
             <div>
-              <strong>Hội thoại đang mở</strong>
-              <small>Test cách AI trả lời trước, sau đó mới bật Auto nhắn tin</small>
+              <strong>AI Chat</strong>
+              <small>Đọc cuộc chat hiện tại → soạn → bạn duyệt → gửi</small>
             </div>
             <div class="chat-head-actions">
-              <label class="switch-wrap auto-chat-switch" title="Chỉ tự động trả lời hội thoại đang mở">
+              <label class="switch-wrap auto-chat-switch" title="Chỉ chạy sau khi bạn bật">
                 <input id="auto-reply" type="checkbox" />
                 <span class="switch"></span>
-                <b>Auto nhắn tin</b>
+                <b>Auto</b>
               </label>
               <button id="inspect-chat" class="icon-button" title="Kiểm tra đọc hội thoại">◎</button>
             </div>
           </div>
-          <div id="chat-diagnostics" class="diagnostics muted">Chưa kiểm tra hội thoại.</div>
-          <button id="suggest-reply" class="primary full">AI soạn câu trả lời</button>
+          <div id="chat-diagnostics" class="diagnostics muted">Mở Business Suite Inbox/Messenger và chọn một hội thoại để bắt đầu.</div>
+          <button id="suggest-reply" class="primary full ai-compose-button">✦ AI soạn câu trả lời</button>
           <label class="output-label">
             <span>Câu trả lời</span>
-            <textarea id="reply-output" rows="5" placeholder="AI sẽ soạn câu trả lời ở đây..."></textarea>
+            <textarea id="reply-output" rows="6" placeholder="AI sẽ soạn câu trả lời ở đây. Bạn có thể sửa trước khi gửi..."></textarea>
           </label>
-          <button id="send-reply" class="secondary full" disabled>Gửi vào Facebook</button>
+          <button id="send-reply" class="secondary full send-button" disabled>Gửi vào Facebook</button>
+          <div class="on-demand-note"><span class="pulse-dot"></span> Auto mặc định tắt và không quét nền. Khi bật, engine Auto mới được nạp.</div>
         </section>
 
-        <section class="card activity-card">
+        <section class="card activity-card" data-tool-pane="chat" id="activity-card">
           <div class="section-head">
             <div>
-              <strong>Hoạt động</strong>
-              <small>Nhật ký trong phiên hiện tại</small>
+              <strong>Hoạt động phiên này</strong>
+              <small>Chỉ ghi log trong lúc app đang mở</small>
             </div>
+            <button type="button" id="clear-activity" class="tiny-action">Xóa log</button>
           </div>
           <div id="activity" class="activity"></div>
         </section>
-
-        <div class="safety-note">
-          Auto Chat mặc định tắt. Chỉ bật sau khi bạn đã kiểm tra AI soạn và gửi thủ công ổn. Auto chỉ phản hồi tin mới của hội thoại đang mở và vẫn giữ giới hạn tốc độ hiện tại.
-        </div>
       </div>
     </aside>
   </div>
@@ -252,5 +272,6 @@
   <script src="profile-login.js"></script>
   <script src="ai-options.js"></script>
   <script src="panel-toggle.js"></script>
+  <script src="ui-v2.js"></script>
 </body>
 </html>
