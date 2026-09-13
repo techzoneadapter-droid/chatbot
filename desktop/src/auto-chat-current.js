@@ -8,6 +8,8 @@
   const handledIncoming = new Map();
   const lastSentText = new Map();
 
+  if (!window.__pagebotChatbotEngine) window.__pagebotChatbotEngine = "light";
+
   function lightEngineSelected() {
     return window.__pagebotChatbotEngine === "light";
   }
