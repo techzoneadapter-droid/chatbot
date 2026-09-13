@@ -6,13 +6,14 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
-test("profile login credentials use Windows secure storage and 2FA is not persisted", () => {
+test("profile login credentials use Windows secure storage and TOTP secret is not persisted", () => {
   const bootstrap = read("src/bootstrap.js");
   const ui = read("src/profile-login.js");
   assert.match(bootstrap, /facebook-login:/);
   assert.match(bootstrap, /encryptSecret\(JSON\.stringify\(\{ account, password \}\)\)/);
   assert.doesNotMatch(bootstrap, /JSON\.stringify\(\{[^}]*twoFactorCode/);
-  assert.match(ui, /Mã 2FA/);
+  assert.match(ui, /Khóa 2FA \/ TOTP secret/);
+  assert.match(ui, /generateTotp/);
   assert.match(ui, /không được lưu/i);
 });
 
