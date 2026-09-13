@@ -295,6 +295,7 @@ async function openTool(profileId) {
 }
 
 function register() {
+  // Always (re)register so handlers exist even if another module removed them.
   try { ipcMain.removeHandler("cookie-tool:open"); } catch {}
   try { ipcMain.removeHandler("cookie:import"); } catch {}
   try { ipcMain.removeHandler("cookie:export"); } catch {}
@@ -324,6 +325,9 @@ function register() {
   });
 }
 
+// Register as early as possible. If app is already ready, register now;
+// otherwise wait for ready. Also re-register one tick later to win any race
+// with other modules that might remove handlers during the same ready turn.
 if (app.isReady()) {
   register();
   setTimeout(register, 0);

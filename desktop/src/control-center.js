@@ -150,55 +150,75 @@
           <small>Chạy 100% local · không gửi ra server</small>
         </div>
       </div>
-      <p class="help">Dán chuỗi cookie Facebook (dạng <code>c_user=...; xs=...; ...</code>) rồi bấm Import. App ghi cookie trực tiếp vào session của profile đang mở, không qua máy chủ nào khác.</p>
+      <p class="help">Dán chuỗi cookie (c_user=...; xs=...) hoặc chọn file .txt/.json rồi bấm Import.</p>
       <label>
         <span>Chuỗi cookie</span>
         <textarea id="cc-cookie-input" rows="5" spellcheck="false" autocomplete="off" placeholder="c_user=...; xs=...; fr=...; datr=..."></textarea>
       </label>
       <div class="button-row" style="margin-top:8px;gap:8px;flex-wrap:wrap">
         <button id="cc-cookie-import" type="button" class="primary">Import &amp; Đăng nhập</button>
-        <button id="cc-cookie-export" type="button" class="secondary">Export cookie hiện tại</button>
+        <button id="cc-cookie-file" type="button" class="secondary">Chọn file cookie</button>
+        <button id="cc-cookie-export" type="button" class="secondary">Export cookie</button>
         <button id="cc-cookie-clear" type="button" class="ghost danger">Xóa cookie FB</button>
       </div>
-      <p id="cc-cookie-status" class="help" style="margin-top:8px">Mở profile trước, rồi dán cookie để đăng nhập.</p>
-      <hr style="margin:12px 0;border:none;border-top:1px solid #e5e7eb" />
-      <p class="help">Tuỳ chọn: mở tool Cookie cũ (extension) nếu bạn quen dùng.</p>
+      <input id="cc-cookie-file-input" type="file" accept=".txt,.json,.cookie,text/plain,application/json" style="display:none" />
+      <p id="cc-cookie-status" class="help" style="margin-top:8px">Mở profile trước, rồi dán cookie hoặc chọn file.</p>
     `;
-    cookieButton.className = "secondary full cc-cookie-launch";
-    cookieButton.textContent = "🍪 Mở tool Cookie (extension)";
-    cookieButton.title = "Mở Get Cookie For FPlus";
-    cookieButton.setAttribute("aria-label", "Mở tool Cookie extension");
-    card.appendChild(cookieButton);
+
+    if (cookieButton) {
+      cookieButton.style.display = "none";
+      cookieButton.disabled = true;
+    }
 
     const input = () => card.querySelector("#cc-cookie-input");
     const status = () => card.querySelector("#cc-cookie-status");
-    const setStatus = (text, level = "") => {
+    const setStatus = (msg, level = "") => {
       const el = status();
       if (!el) return;
-      el.textContent = text;
+      el.textContent = msg;
       el.style.color = level === "error" ? "#b91c1c" : level === "ok" ? "#047857" : "";
     };
 
-    card.querySelector("#cc-cookie-import")?.addEventListener("click", async () => {
+    async function doImport(raw) {
       const profile = getActiveProfile();
       if (!profile?.id) return setStatus("Hãy mở một profile trước.", "error");
-      const raw = (input()?.value || "").trim();
-      if (!raw) return setStatus("Hãy dán chuỗi cookie trước.", "error");
+      const cookieText = String(raw || "").trim();
+      if (!cookieText) return setStatus("Hãy dán cookie hoặc chọn file trước.", "error");
       setStatus("Đang import cookie vào session local...");
       try {
-        const result = await window.pagebot.cookieTool.import(profile.id, raw, { clearFirst: true });
+        if (!window.pagebot?.cookieTool?.import) {
+          throw new Error("Chưa có handler cookie:import. Tắt hẳn app rồi mở lại.");
+        }
+        const result = await window.pagebot.cookieTool.import(profile.id, cookieText, { clearFirst: true });
         const warn = (result.warnings || []).join(" ");
+        const ok = result.hasCUser && result.hasXs;
         setStatus(
-          `Đã import ${result.pairCount} cookie (c_user=${result.hasCUser ? "có" : "thiếu"}, xs=${result.hasXs ? "có" : "thiếu"}). Đã reload trang. ${warn}`.trim(),
-          result.hasCUser && result.hasXs ? "ok" : "error"
+          `Đã import ${result.pairCount} cookie (c_user=${result.hasCUser ? "có" : "thiếu"}, xs=${result.hasXs ? "có" : "thiếu"}). ${warn}`.trim(),
+          ok ? "ok" : "error"
         );
-        activityLog(`Cookie import xong cho profile ${profile.name}.`, result.hasCUser && result.hasXs ? "success" : "warn");
+        activityLog(`Cookie import xong cho ${profile.name}.`, ok ? "success" : "warn");
       } catch (error) {
         setStatus(error?.message || String(error), "error");
         activityLog(error?.message || String(error), "error");
       }
-    });
+    }
 
+    card.querySelector("#cc-cookie-import")?.addEventListener("click", () => void doImport(input()?.value || ""));
+    card.querySelector("#cc-cookie-file")?.addEventListener("click", () => card.querySelector("#cc-cookie-file-input")?.click());
+    card.querySelector("#cc-cookie-file-input")?.addEventListener("change", async (event) => {
+      const file = event.target?.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        if (input()) input().value = text.trim();
+        setStatus(`Đã đọc file: ${file.name}`);
+        await doImport(text);
+      } catch (error) {
+        setStatus(error?.message || String(error), "error");
+      } finally {
+        event.target.value = "";
+      }
+    });
     card.querySelector("#cc-cookie-export")?.addEventListener("click", async () => {
       const profile = getActiveProfile();
       if (!profile?.id) return setStatus("Hãy mở một profile trước.", "error");
@@ -207,25 +227,22 @@
         if (input()) input().value = result.cookie || "";
         setStatus(
           result.hasSession
-            ? `Đã lấy ${result.count} cookie (c_user=${result.c_user}). Đã dán vào ô trên.`
-            : `Chỉ có ${result.count} cookie, chưa thấy session đăng nhập đầy đủ.`,
+            ? `Đã lấy ${result.count} cookie (c_user=${result.c_user}).`
+            : `Chỉ có ${result.count} cookie, chưa đủ session.`,
           result.hasSession ? "ok" : "error"
         );
-        activityLog(`Đã export cookie profile ${profile.name}.`, "success");
       } catch (error) {
         setStatus(error?.message || String(error), "error");
       }
     });
-
     card.querySelector("#cc-cookie-clear")?.addEventListener("click", async () => {
       const profile = getActiveProfile();
       if (!profile?.id) return setStatus("Hãy mở một profile trước.", "error");
-      if (!confirm("Xóa toàn bộ cookie Facebook của profile này và chuyển về trang đăng nhập?")) return;
+      if (!confirm("Xóa toàn bộ cookie Facebook của profile này?")) return;
       try {
         const result = await window.pagebot.cookieTool.clear(profile.id);
         if (input()) input().value = "";
-        setStatus(`Đã xóa khoảng ${result.removed || 0} cookie Facebook của profile.`, "ok");
-        activityLog(`Đã xóa cookie Facebook profile ${profile.name}.`, "success");
+        setStatus(`Đã xóa khoảng ${result.removed || 0} cookie.`, "ok");
       } catch (error) {
         setStatus(error?.message || String(error), "error");
       }
