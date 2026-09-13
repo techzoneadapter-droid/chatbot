@@ -8,38 +8,18 @@
       renderProfiles();
       renderAiPanel();
       if (typeof log === "function") {
-        log("PageBot đã sẵn sàng. Chỉ mở profile, proxy, AI hoặc Auto Chat khi bạn bật chúng.", "success");
+        log("PageBot đã sẵn sàng. Profile, AI và Auto Chat chỉ chạy khi bạn chủ động dùng.", "success");
       }
     };
   }
 
-  function installMetaDevShortcut() {
-    const shortcuts = document.querySelector(".browser-shortcuts");
-    if (!shortcuts || document.getElementById("meta-dev-shortcut")) return false;
-
-    const style = document.createElement("style");
-    style.textContent = ".browser-shortcut.meta-dev{color:#0f8b55}.browser-shortcut.meta-dev:hover{background:#effaf5;border-color:#ccebdd}";
-    document.head.appendChild(style);
-
-    const button = document.createElement("button");
-    button.id = "meta-dev-shortcut";
-    button.type = "button";
-    button.className = "browser-shortcut meta-dev";
-    button.title = "Meta Graph API Explorer";
-    button.innerHTML = "🔑 <span>Token</span>";
-    button.addEventListener("click", async () => {
-      if (typeof state !== "undefined" && !state.activeProfile) {
-        if (typeof log === "function") log("Hãy mở một profile trước khi mở Meta Graph API Explorer.", "warn");
-        return;
-      }
-      try {
-        await window.pagebot.browser.navigate("https://developers.facebook.com/tools/explorer/");
-      } catch (error) {
-        if (typeof log === "function") log(errorText(error), "error");
-      }
-    });
-    shortcuts.appendChild(button);
-    return true;
+  function removeLegacyCookieUi() {
+    const button = document.getElementById("cookie-tool");
+    if (!button) return;
+    button.style.display = "none";
+    button.disabled = true;
+    button.setAttribute("aria-hidden", "true");
+    button.tabIndex = -1;
   }
 
   document.addEventListener("readystatechange", () => {
@@ -47,9 +27,6 @@
   });
 
   document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => {
-      if (installMetaDevShortcut()) return;
-      requestAnimationFrame(() => installMetaDevShortcut());
-    }, 0);
+    removeLegacyCookieUi();
   });
 })();
