@@ -21,9 +21,10 @@ test('multi-conversation auto isolates thread state and serializes send lane', (
   assert.match(auto, /processingKeys = new Set\(\)/);
   assert.match(auto, /candidateStateKey/);
   assert.match(auto, /incomingSignature/);
-  assert.match(auto, /revalidatedKey !== stateKey/);
+  assert.match(auto, /candidateStateKey\(candidate, latest\) !== stateKey/);
   assert.match(auto, /await window\.pagebot\.chat\.send\(text\)/);
   assert.match(auto, /for \(const candidate of batch\)/);
+  assert.match(auto, /waitingForCustomer/);
   assert.doesNotMatch(auto, /Promise\.all\([^)]*chat\.send/);
 });
 
