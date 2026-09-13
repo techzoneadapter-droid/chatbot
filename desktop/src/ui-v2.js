@@ -6,6 +6,28 @@
   function $(selector) { return document.querySelector(selector); }
   function $all(selector) { return Array.from(document.querySelectorAll(selector)); }
 
+  function installRuntimeStyle() {
+    if (document.getElementById("pagebot-v2-runtime-style")) return;
+    const style = document.createElement("style");
+    style.id = "pagebot-v2-runtime-style";
+    style.textContent = `
+      body.ai-panel-collapsed .tool-tabs { display: none !important; }
+      @media (max-width: 1280px) {
+        .sidebar { width: 260px !important; }
+        .browser-bar { left: 260px !important; }
+        .workspace-empty { left: 260px !important; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function removeCookieCompatibilityNode() {
+    // renderer.js still looks up this id during its one-time event binding. Remove
+    // the invisible compatibility node only after all static scripts are ready.
+    const node = document.getElementById("cookie-tool");
+    if (node) node.remove();
+  }
+
   function setTab(name, remember = true) {
     const valid = new Set(["chat", "ai", "network", "account"]);
     activeTab = valid.has(name) ? name : "chat";
@@ -110,10 +132,12 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
+    installRuntimeStyle();
     bindTabs();
     bindOnDemandAuto();
     bindActivityActions();
     bindProfileEvents();
+    removeCookieCompatibilityNode();
     markReady();
   });
 })();
