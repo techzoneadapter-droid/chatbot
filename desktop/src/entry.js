@@ -10,7 +10,9 @@ app.on("browser-window-created", (_event, window) => {
 });
 
 const nativeFetch = globalThis.fetch?.bind(globalThis);
-const RETRYABLE_AI_STATUS = new Set([429, 500, 502, 503, 504]);
+// 429 is deliberately NOT retried here. The Auto Sales engine reads the
+// provider's retry window and pauses all AI work instead of creating a retry storm.
+const RETRYABLE_AI_STATUS = new Set([500, 502, 503, 504]);
 const MAX_AI_ATTEMPTS = 3;
 
 function isAIEndpoint(input) {
