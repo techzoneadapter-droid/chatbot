@@ -295,10 +295,10 @@ async function openTool(profileId) {
 }
 
 function register() {
-  ipcMain.removeHandler("cookie-tool:open");
-  ipcMain.removeHandler("cookie:import");
-  ipcMain.removeHandler("cookie:export");
-  ipcMain.removeHandler("cookie:clear");
+  try { ipcMain.removeHandler("cookie-tool:open"); } catch {}
+  try { ipcMain.removeHandler("cookie:import"); } catch {}
+  try { ipcMain.removeHandler("cookie:export"); } catch {}
+  try { ipcMain.removeHandler("cookie:clear"); } catch {}
 
   ipcMain.handle("cookie-tool:open", (_event, profileId) => openTool(String(profileId || "")));
 
@@ -324,6 +324,12 @@ function register() {
   });
 }
 
-app.whenReady().then(() => {
+if (app.isReady()) {
+  register();
   setTimeout(register, 0);
-});
+} else {
+  app.whenReady().then(() => {
+    register();
+    setTimeout(register, 0);
+  });
+}
