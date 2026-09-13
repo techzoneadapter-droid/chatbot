@@ -1,4 +1,4 @@
-const { app } = require("electron");
+const { app, ipcMain } = require("electron");
 
 app.commandLine.appendSwitch(
   "disable-features",
@@ -66,6 +66,21 @@ if (nativeFetch) {
 // Must be installed before main.js so the legacy 2.5s loop is captured and remains off.
 require("./legacy-auto-guard");
 
-// Startup path is intentionally short: one bootstrap only. Chat snapshot/runtime
-// overrides are no longer loaded in the background at launch.
+// Startup path remains short. The improved Business Suite snapshot reader is
+// loaded only when AI/Auto first asks to read a conversation.
+let liteSnapshotLoading = null;
+ipcMain.handle("chat:enable-lite-snapshot", async () => {
+  if (!liteSnapshotLoading) {
+    liteSnapshotLoading = Promise.resolve().then(async () => {
+      require("./chat-snapshot-lite");
+      await wait(320);
+      return true;
+    }).catch((error) => {
+      liteSnapshotLoading = null;
+      throw error;
+    });
+  }
+  return liteSnapshotLoading;
+});
+
 require("./bootstrap");
