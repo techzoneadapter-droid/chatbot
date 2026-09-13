@@ -24,3 +24,12 @@ test('chat runtime overrides snapshot and suggestion lazily', () => {
   assert.match(runtime, /createTreeWalker\(document\.body, NodeFilter\.SHOW_TEXT\)/);
   assert.match(runtime, /No DOM scan and no AI network request happens at startup/);
 });
+
+test('native cookie import/export handlers are registered', () => {
+  const runtime = read('src/cookie-tool-runtime.js');
+  assert.match(runtime, /ipcMain\.handle\("cookie:import"/);
+  assert.match(runtime, /ipcMain\.handle\("cookie:export"/);
+  assert.match(runtime, /ipcMain\.handle\("cookie:clear"/);
+  assert.match(runtime, /ses\.cookies\.set/);
+  assert.match(runtime, /clearFacebookCookies/);
+});
