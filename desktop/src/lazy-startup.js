@@ -22,11 +22,21 @@
     button.tabIndex = -1;
   }
 
+  function loadLightAutoChat() {
+    if (document.querySelector('script[data-pagebot-light-auto="1"]')) return;
+    const script = document.createElement("script");
+    script.src = "auto-chat-current.js";
+    script.defer = true;
+    script.dataset.pagebotLightAuto = "1";
+    document.body.appendChild(script);
+  }
+
   document.addEventListener("readystatechange", () => {
     if (document.readyState === "interactive") installLazyInit();
   });
 
   document.addEventListener("DOMContentLoaded", () => {
     removeLegacyCookieUi();
+    loadLightAutoChat();
   });
 })();
