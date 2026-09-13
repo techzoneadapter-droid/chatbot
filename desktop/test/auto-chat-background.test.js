@@ -26,13 +26,17 @@ test('lightweight Auto Chat uses one gated timeout loop without global busy over
   assert.doesNotMatch(auto, /setInterval\(/);
 });
 
-test('light snapshot reader scopes scanning aggressively and stays lazy', () => {
+test('chat override runtimes are not loaded at startup', () => {
   const entry = read('src/entry.js');
-  const runtime = read('src/chat-snapshot-lite.js');
-  assert.match(entry, /require\("\.\/chat-snapshot-lite"\)/);
-  assert.match(runtime, /createTreeWalker\(root, NodeFilter\.SHOW_TEXT\)/);
-  assert.match(runtime, /scanned < 2200/);
-  assert.match(runtime, /fastVisible/);
-  assert.match(runtime, /ipcMain\.removeHandler\("chat:snapshot"\)/);
-  assert.match(runtime, /does no work until Inspect\/Auto explicitly requests a snapshot/);
+  assert.doesNotMatch(entry, /require\("\.\/chat-snapshot-lite"\)/);
+  assert.doesNotMatch(entry, /require\("\.\/chat-runtime"\)/);
+});
+
+test('Auto script itself is lazy-loaded only after user interaction', () => {
+  const lazy = read('src/lazy-startup.js');
+  const ui = read('src/ui-v2.js');
+  assert.doesNotMatch(lazy, /auto-chat-current\.js/);
+  assert.match(ui, /AUTO_SCRIPT = "auto-chat-current\.js"/);
+  assert.match(ui, /loadAutoEngine/);
+  assert.match(ui, /toggle\.checked/);
 });
