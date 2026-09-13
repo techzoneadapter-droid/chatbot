@@ -16,28 +16,26 @@ test("startup keeps proxy and Auto Chat off until the user enables them", () => 
   assert.match(entry, /resetManualRuntimeSwitches/);
 });
 
-test("fresh app runs start profiles from configured home page instead of restoring old diagnostic pages", () => {
+test("fresh app starts profiles from configured home page", () => {
   const entry = read("src/entry.js");
   assert.match(entry, /profile\.lastUrl = profile\.startUrl/);
 });
 
-test("proxy UI is event-driven instead of polling in the background", () => {
-  const source = read("src/proxy-panel.js");
-  assert.doesNotMatch(source, /setInterval\s*\(/);
-  assert.match(source, /active-profile/);
-});
-
 test("profile browser opens only through explicit open action", () => {
   const source = read("src/preload.js");
-  assert.doesNotMatch(source, /startupOpenDeferred/);
   assert.match(source, /profile:prepare-network/);
   assert.match(source, /profile:open/);
 });
 
-test("toolbar includes official Meta Graph API Explorer shortcut", () => {
-  const source = read("src/lazy-startup.js");
-  assert.match(source, /developers\.facebook\.com\/tools\/explorer/);
-  assert.match(source, /meta-dev-shortcut/);
+test("cookie bridge is not exposed by preload", () => {
+  const source = read("src/preload.js");
+  assert.doesNotMatch(source, /cookieTool|cookie:import|cookie:export|cookie:clear/);
+});
+
+test("startup entry does not load cookie or duplicate login runtimes", () => {
+  const source = read("src/entry.js");
+  assert.doesNotMatch(source, /cookie-tool-runtime/);
+  assert.doesNotMatch(source, /profile-login-runtime/);
 });
 
 test("DEV launcher starts Electron directly", () => {

@@ -1,9 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 async function openProfile(profileId) {
-  // Profiles are never opened automatically at startup. When the renderer calls
-  // this function it is a real user action, so initialize only this profile's
-  // network/session and then create its browser view.
   await ipcRenderer.invoke("profile:prepare-network", profileId);
   return ipcRenderer.invoke("profile:open", profileId);
 }
@@ -23,12 +20,6 @@ contextBridge.exposeInMainWorld("pagebot", {
     home: () => ipcRenderer.invoke("browser:home"),
     navigate: (url) => ipcRenderer.invoke("browser:navigate", url),
     state: () => ipcRenderer.invoke("browser:state")
-  },
-  cookieTool: {
-    open: (profileId) => ipcRenderer.invoke("cookie-tool:open", profileId),
-    import: (profileId, cookieString, options) => ipcRenderer.invoke("cookie:import", profileId, cookieString, options),
-    export: (profileId) => ipcRenderer.invoke("cookie:export", profileId),
-    clear: (profileId) => ipcRenderer.invoke("cookie:clear", profileId)
   },
   chat: {
     snapshot: () => ipcRenderer.invoke("chat:snapshot"),
