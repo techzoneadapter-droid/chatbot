@@ -1,8 +1,25 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+let liteSnapshotReadyPromise = null;
+
 async function openProfile(profileId) {
   await ipcRenderer.invoke("profile:prepare-network", profileId);
   return ipcRenderer.invoke("profile:open", profileId);
+}
+
+async function ensureLiteSnapshotReader() {
+  if (!liteSnapshotReadyPromise) {
+    liteSnapshotReadyPromise = ipcRenderer.invoke("chat:enable-lite-snapshot").catch((error) => {
+      liteSnapshotReadyPromise = null;
+      throw error;
+    });
+  }
+  return liteSnapshotReadyPromise;
+}
+
+async function readChatSnapshot() {
+  await ensureLiteSnapshotReader();
+  return ipcRenderer.invoke("chat:snapshot");
 }
 
 contextBridge.exposeInMainWorld("pagebot", {
@@ -22,7 +39,7 @@ contextBridge.exposeInMainWorld("pagebot", {
     state: () => ipcRenderer.invoke("browser:state")
   },
   chat: {
-    snapshot: () => ipcRenderer.invoke("chat:snapshot"),
+    snapshot: readChatSnapshot,
     send: (text) => ipcRenderer.invoke("chat:send", text)
   },
   ai: {
