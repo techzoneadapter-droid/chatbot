@@ -1,4 +1,4 @@
-const { app, ipcMain } = require("electron");
+const { app, ipcMain, session } = require("electron");
 
 app.commandLine.appendSwitch(
   "disable-features",
@@ -64,16 +64,32 @@ if (nativeFetch) {
   };
 }
 
+// Keep the old Auto loop fully disarmed unless the user explicitly enables it.
 require("./legacy-auto-guard");
-require("./sales-followup-runtime");
 
+// Heavy Sales/Follow-up AI code is loaded only when Auto Chat actually needs it.
+let salesRuntimeLoading = null;
+ipcMain.handle("sales:ensure-runtime", async () => {
+  if (!salesRuntimeLoading) {
+    salesRuntimeLoading = Promise.resolve().then(() => {
+      require("./sales-followup-runtime");
+      return true;
+    }).catch((error) => {
+      salesRuntimeLoading = null;
+      throw error;
+    });
+  }
+  return salesRuntimeLoading;
+});
+
+// The DOM chat readers are also demand-loaded on first Inspect/AI/Auto use.
 let liteSnapshotLoading = null;
 ipcMain.handle("chat:enable-lite-snapshot", async () => {
   if (!liteSnapshotLoading) {
     liteSnapshotLoading = Promise.resolve().then(async () => {
       require("./chat-snapshot-lite");
       require("./multi-chat-runtime");
-      await wait(320);
+      await wait(120);
       return true;
     }).catch((error) => {
       liteSnapshotLoading = null;
@@ -83,4 +99,23 @@ ipcMain.handle("chat:enable-lite-snapshot", async () => {
   return liteSnapshotLoading;
 });
 
+// Lightweight per-profile request filter: no polling, no network request of its own.
+// It only cancels heavy video/media requests after the user opens that profile.
+const performanceSessions = new WeakSet();
+ipcMain.handle("profile:prepare-performance", (_event, profileId) => {
+  const value = String(profileId || "");
+  if (!value) return false;
+  const ses = session.fromPartition(`persist:pagebot-${value}`);
+  if (performanceSessions.has(ses)) return true;
+  performanceSessions.add(ses);
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    const url = String(details.url || "");
+    const heavyMedia = details.resourceType === "media" || /\.(?:mp4|m4v|webm|mov)(?:\?|$)/i.test(url);
+    callback({ cancel: heavyMedia });
+  });
+  return true;
+});
+
+// Registers only local IPC handlers. electron-updater itself is required lazily on click.
+require("./update-runtime");
 require("./bootstrap");
