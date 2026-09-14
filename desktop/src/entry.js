@@ -119,3 +119,5 @@ ipcMain.handle("profile:prepare-performance", (_event, profileId) => {
 // Registers only local IPC handlers. electron-updater itself is required lazily on click.
 require("./update-runtime");
 require("./bootstrap");
+// Replace only the brittle quick-login runner after bootstrap registers its handlers.
+require("./profile-login-runner");
