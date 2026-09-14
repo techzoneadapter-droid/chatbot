@@ -1,16 +1,19 @@
 {
   "name": "pagebot-desktop",
-  "version": "0.1.0-dev",
+  "version": "0.2.0",
   "description": "Multi-profile Facebook browser with local AI chat assistant",
   "main": "src/entry.js",
   "author": "techzoneadapter-droid",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/entry.js && node --check src/legacy-auto-guard.js && node --check src/bootstrap.js && node --check src/ai-runtime.js && node --check src/chat-runtime.js && node --check src/chat-snapshot-lite.js && node --check src/multi-chat-runtime.js && node --check src/sales-followup-policy.js && node --check src/sales-followup-runtime.js && node --check src/main.js && node --check src/preload.js && node --check src/lazy-startup.js && node --check src/renderer.js && node --check src/profile-inline.js && node --check src/proxy-panel.js && node --check src/profile-login.js && node --check src/ai-options.js && node --check src/panel-toggle.js && node --check src/token-panel.js && node --check src/ai-chat-focus.js && node --check src/auto-chat-current.js && node --check src/browser-utils.js && node --check src/ui-v2.js",
+    "check": "node --check src/entry.js && node --check src/legacy-auto-guard.js && node --check src/bootstrap.js && node --check src/ai-runtime.js && node --check src/chat-runtime.js && node --check src/chat-snapshot-lite.js && node --check src/multi-chat-runtime.js && node --check src/sales-followup-policy.js && node --check src/sales-followup-runtime.js && node --check src/update-runtime.js && node --check src/main.js && node --check src/preload.js && node --check src/lazy-startup.js && node --check src/renderer.js && node --check src/profile-inline.js && node --check src/proxy-panel.js && node --check src/profile-login.js && node --check src/ai-options.js && node --check src/panel-toggle.js && node --check src/token-panel.js && node --check src/ai-chat-focus.js && node --check src/auto-chat-current.js && node --check src/browser-utils.js && node --check src/ui-v2.js",
     "test": "node --test test/*.test.js",
     "verify": "npm run check && npm test",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "electron": "latest",
@@ -18,7 +21,8 @@
   },
   "build": {
     "appId": "com.techzone.pagebotdesktop",
-    "productName": "PageBot Desktop",
+    "productName": "PageBot AI Studio",
+    "artifactName": "PageBot-AI-Studio-Setup-${version}.${ext}",
     "asar": true,
     "files": ["src/**/*", "package.json"],
     "directories": {"output": "dist"},
@@ -27,7 +31,16 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+      "createStartMenuShortcut": true,
+      "shortcutName": "PageBot AI Studio"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "techzoneadapter-droid",
+        "repo": "chatbot",
+        "releaseType": "release"
+      }
+    ]
   }
 }
