@@ -44,6 +44,26 @@ function isMobile(contents) {
   }
 }
 
+function setMobileShell(win, enabled) {
+  if (!win || win.isDestroyed()) return;
+  const script = `(() => {
+    const enabled = ${enabled ? "true" : "false"};
+    document.body.classList.toggle('mobile-emulation-active', enabled);
+    let style = document.getElementById('pagebot-mobile-shell-style');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'pagebot-mobile-shell-style';
+      style.textContent = `
+        body.mobile-emulation-active .workspace-empty { background: #eef2f7 !important; }
+        body.mobile-emulation-active .workspace-empty-card { display: none !important; }
+      `;
+      document.head.appendChild(style);
+    }
+    return true;
+  })()`;
+  win.webContents.executeJavaScript(script, true).catch(() => {});
+}
+
 function applyMobileBounds(win, view) {
   if (!win || win.isDestroyed() || !view) return;
   try {
@@ -109,6 +129,7 @@ async function setMobile(enabled) {
     contents.setUserAgent(MOBILE_USER_AGENT);
     applyDeviceEmulation(contents);
     enabledContentsIds.add(contents.id);
+    setMobileShell(win, true);
     applyMobileBounds(win, view);
   } else {
     clearDeviceEmulation(contents);
@@ -116,6 +137,7 @@ async function setMobile(enabled) {
     if (original) contents.setUserAgent(original);
     originalUserAgentByContentsId.delete(contents.id);
     enabledContentsIds.delete(contents.id);
+    setMobileShell(win, false);
     restoreDesktopBounds(win, view);
   }
 
