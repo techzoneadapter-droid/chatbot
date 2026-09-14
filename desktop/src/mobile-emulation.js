@@ -46,17 +46,16 @@ function isMobile(contents) {
 
 function setMobileShell(win, enabled) {
   if (!win || win.isDestroyed()) return;
+  const enabledLiteral = enabled ? "true" : "false";
   const script = `(() => {
-    const enabled = ${enabled ? "true" : "false"};
+    const enabled = ${enabledLiteral};
     document.body.classList.toggle('mobile-emulation-active', enabled);
     let style = document.getElementById('pagebot-mobile-shell-style');
     if (!style) {
       style = document.createElement('style');
       style.id = 'pagebot-mobile-shell-style';
-      style.textContent = `
-        body.mobile-emulation-active .workspace-empty { background: #eef2f7 !important; }
-        body.mobile-emulation-active .workspace-empty-card { display: none !important; }
-      `;
+      style.textContent = 'body.mobile-emulation-active .workspace-empty { background: #eef2f7 !important; }\n' +
+        'body.mobile-emulation-active .workspace-empty-card { display: none !important; }';
       document.head.appendChild(style);
     }
     return true;
