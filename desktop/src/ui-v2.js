@@ -1,9 +1,11 @@
 (() => {
   const AUTO_SCRIPT = "auto-chat-current.js";
+  const META_MODEL = "muse-spark-1.3";
   let autoScriptPromise = null;
   let aiStatusPromise = null;
   let activeTab = "chat";
   let updateBusy = false;
+  const metaSyncing = new Set();
 
   function $(selector) { return document.querySelector(selector); }
   function $all(selector) { return Array.from(document.querySelectorAll(selector)); }
@@ -116,6 +118,29 @@
     } catch {}
   }
 
+  async function preferMetaProfile(profile) {
+    if (!profile?.id || metaSyncing.has(profile.id)) return;
+    const alreadyMeta = profile.aiProvider === "meta" && /^muse-/i.test(String(profile.aiModel || ""));
+    if (alreadyMeta) return;
+    metaSyncing.add(profile.id);
+    try {
+      const updated = await window.pagebot.profiles.update(profile.id, {
+        aiProvider: "meta",
+        aiModel: META_MODEL
+      });
+      if (typeof state !== "undefined" && state.activeProfile?.id === profile.id) {
+        state.activeProfile = updated;
+        if (typeof renderProfiles === "function") renderProfiles();
+        if (typeof renderAiPanel === "function") renderAiPanel();
+      }
+      if (typeof log === "function") log(`AI của ${updated.name || "profile"} đã chuyển sang Meta Muse Spark 1.3.`, "success");
+    } catch (error) {
+      if (typeof log === "function") log(error?.message || String(error), "error");
+    } finally {
+      metaSyncing.delete(profile.id);
+    }
+  }
+
   function bindTabs() {
     $all(".tool-tab").forEach((button) => {
       button.addEventListener("click", () => setTab(button.dataset.toolTab));
@@ -206,6 +231,7 @@
     window.pagebot.onEvent((event) => {
       if (event?.type === "active-profile" && event.payload) {
         void disarmPersistedAuto(event.payload);
+        void preferMetaProfile(event.payload);
         setTab("chat", false);
       }
       if (event?.type === "update-state") updateButtonState(event.payload || {});
