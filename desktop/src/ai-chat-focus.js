@@ -1,5 +1,6 @@
 (() => {
   const q = (selector) => document.querySelector(selector);
+  const META_MODEL = "muse-spark-1.3";
 
   function setStatus(text, type = "muted") {
     const box = q("#ai-chat-focus-status");
@@ -25,25 +26,47 @@
   }
 
   async function chooseWorkingModel() {
-    const provider = q("#ai-provider")?.value || "gemini";
-    const result = await window.pagebot.ai.models(provider);
+    const result = await window.pagebot.ai.models("meta");
     const models = Array.isArray(result?.models) ? result.models : [];
-    if (!models.length) throw new Error("API không trả về model chat khả dụng.");
+    if (!models.length) throw new Error("Meta Model API không trả về model chat khả dụng.");
     const current = q("#ai-model")?.value?.trim();
-    const selected = current && models.includes(current) ? current : result.recommended || models[0];
-    q("#ai-model").value = selected;
+    const selected = current && models.includes(current)
+      ? current
+      : models.find((name) => name === META_MODEL)
+        || result.recommended
+        || models[0];
+    if (q("#ai-provider")) q("#ai-provider").value = "meta";
+    if (q("#ai-model")) q("#ai-model").value = selected;
     return selected;
   }
 
   async function savePrompt(prompt) {
     if (!state?.activeProfile) return;
+    const selected = /^muse-/i.test(q("#ai-model")?.value?.trim() || "")
+      ? q("#ai-model").value.trim()
+      : META_MODEL;
+    if (q("#ai-provider")) q("#ai-provider").value = "meta";
+    if (q("#ai-model")) q("#ai-model").value = selected;
     state.activeProfile = await window.pagebot.profiles.update(state.activeProfile.id, {
-      aiProvider: q("#ai-provider")?.value || "gemini",
-      aiModel: q("#ai-model")?.value?.trim() || state.activeProfile.aiModel,
+      aiProvider: "meta",
+      aiModel: selected,
       knowledge: q("#knowledge")?.value || "",
       systemPrompt: prompt,
       autoReply: Boolean(q("#auto-reply")?.checked)
     });
+    if (typeof renderProfiles === "function") renderProfiles();
+    if (typeof updateApiStatus === "function") updateApiStatus();
+  }
+
+  async function askMetaSales(profileId, snapshot) {
+    const plan = await window.pagebot.sales.analyzeFollowup(profileId, snapshot, "new_message");
+    return {
+      text: String(plan?.reply || "").trim(),
+      action: String(plan?.action || ""),
+      confidence: Number(plan?.confidence || 0),
+      snapshot,
+      profileId
+    };
   }
 
   async function suggest(mode = "normal") {
@@ -55,7 +78,7 @@
     if (button) button.disabled = true;
 
     try {
-      setStatus("Đang đọc hội thoại...", "working");
+      setStatus("Meta Muse đang đọc hội thoại...", "working");
       const snapshot = await window.pagebot.chat.snapshot();
       if (!snapshot?.inputFound) throw new Error("Không tìm thấy ô chat. Hãy mở một cuộc hội thoại trong Business Suite Inbox hoặc Messenger.");
       if (!snapshot?.latestText) throw new Error("Chưa đọc được tin nhắn trong hội thoại đang mở.");
@@ -64,23 +87,38 @@
       await savePrompt(temporaryPrompt);
       let result;
       try {
-        result = await window.pagebot.ai.suggest();
+        result = await askMetaSales(profileId, snapshot);
       } catch (error) {
         if (!isRecoverableModelError(error)) throw error;
-        setStatus("Model hiện tại lỗi hoặc quá tải. Đang tự chọn model khả dụng...", "working");
+        setStatus("Meta Muse hiện tại lỗi hoặc quá tải. Đang chọn model Meta khả dụng...", "working");
         const selected = await chooseWorkingModel();
         await savePrompt(temporaryPrompt);
-        if (typeof log === "function") log(`Đã tự chuyển sang model ${selected} để thử lại.`, "warn");
-        result = await window.pagebot.ai.suggest();
+        if (typeof log === "function") log(`Đã chuyển sang Meta model ${selected} để thử lại.`, "warn");
+        result = await askMetaSales(profileId, snapshot);
       }
 
       if (state.activeProfile?.id !== profileId || result?.profileId !== profileId) return;
-      state.lastSuggestion = result.text || "";
+      if (!result.text) {
+        const reason = result.action === "wait"
+          ? "Meta đánh giá hiện tại nên chờ khách, không cần gửi thêm."
+          : result.action === "handoff"
+            ? "Meta đề nghị chuyển cho người thật xử lý."
+            : "Meta chưa tạo câu trả lời phù hợp cho lượt này.";
+        state.lastSuggestion = "";
+        q("#reply-output").value = "";
+        q("#send-reply").disabled = true;
+        if (typeof renderDiagnostics === "function") renderDiagnostics(snapshot);
+        setStatus(reason, "warn");
+        if (typeof log === "function") log(reason, "warn");
+        return;
+      }
+
+      state.lastSuggestion = result.text;
       q("#reply-output").value = state.lastSuggestion;
-      q("#send-reply").disabled = !state.lastSuggestion;
-      if (typeof renderDiagnostics === "function") renderDiagnostics(result.snapshot);
-      setStatus("AI đã soạn xong. Hãy đọc, chỉnh nếu cần rồi mới bấm Gửi vào Facebook.", "ok");
-      if (typeof log === "function") log("AI đã đọc hội thoại và soạn câu trả lời.", "success");
+      q("#send-reply").disabled = false;
+      if (typeof renderDiagnostics === "function") renderDiagnostics(snapshot);
+      setStatus(`Meta Muse đã soạn xong · độ tin cậy ${Math.round(result.confidence * 100)}%. Hãy đọc rồi mới gửi.`, "ok");
+      if (typeof log === "function") log("Meta Muse đã đọc hội thoại và soạn câu trả lời.", "success");
     } catch (error) {
       const text = cleanError(error);
       setStatus(text, "error");
@@ -98,7 +136,7 @@
     tools.id = "ai-chat-focus-tools";
     tools.className = "ai-chat-focus-tools";
     tools.innerHTML = `
-      <div class="ai-chat-focus-title">AI Chat thủ công</div>
+      <div class="ai-chat-focus-title">Meta Muse · AI Chat thủ công</div>
       <div id="ai-chat-focus-status" class="ai-chat-focus-status muted">Mở một cuộc chat rồi bấm AI soạn câu trả lời.</div>
       <div class="ai-chat-focus-modes">
         <button type="button" data-mode="shorter">Ngắn hơn</button>
