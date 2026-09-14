@@ -3,10 +3,15 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 
 const MOBILE_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36";
+const MOBILE_WIDTH = 412;
+const SIDEBAR_WIDTH = 260;
+const AI_PANEL_WIDTH = 360;
+const TOPBAR_HEIGHT = 54;
+
 const originalUserAgentByContentsId = new Map();
 const enabledContentsIds = new Set();
 
-function embeddedBrowserContents() {
+function embeddedBrowserTarget() {
   const windows = [BrowserWindow.getFocusedWindow(), ...BrowserWindow.getAllWindows()].filter(Boolean);
   const seen = new Set();
   for (const win of windows) {
@@ -14,15 +19,19 @@ function embeddedBrowserContents() {
     seen.add(win.id);
     try {
       const children = Array.isArray(win.contentView?.children) ? win.contentView.children : [];
-      for (const child of children) {
-        const contents = child?.webContents;
+      for (const view of children) {
+        const contents = view?.webContents;
         if (!contents || contents.isDestroyed()) continue;
         const url = String(contents.getURL() || "");
-        if (/^https?:\/\//i.test(url)) return contents;
+        if (/^https?:\/\//i.test(url)) return { win, view, contents };
       }
     } catch {}
   }
   return null;
+}
+
+function embeddedBrowserContents() {
+  return embeddedBrowserTarget()?.contents || null;
 }
 
 function isMobile(contents) {
@@ -33,6 +42,35 @@ function isMobile(contents) {
   } catch {
     return false;
   }
+}
+
+function applyMobileBounds(win, view) {
+  if (!win || win.isDestroyed() || !view) return;
+  try {
+    const [contentWidth, contentHeight] = win.getContentSize();
+    const availableWidth = Math.max(320, contentWidth - SIDEBAR_WIDTH - AI_PANEL_WIDTH);
+    const width = Math.min(MOBILE_WIDTH, availableWidth);
+    const x = SIDEBAR_WIDTH + Math.max(0, Math.floor((availableWidth - width) / 2));
+    view.setBounds({
+      x,
+      y: TOPBAR_HEIGHT,
+      width,
+      height: Math.max(300, contentHeight - TOPBAR_HEIGHT)
+    });
+  } catch {}
+}
+
+function restoreDesktopBounds(win, view) {
+  if (!win || win.isDestroyed() || !view) return;
+  try {
+    const [contentWidth, contentHeight] = win.getContentSize();
+    view.setBounds({
+      x: SIDEBAR_WIDTH,
+      y: TOPBAR_HEIGHT,
+      width: Math.max(320, contentWidth - SIDEBAR_WIDTH - AI_PANEL_WIDTH),
+      height: Math.max(300, contentHeight - TOPBAR_HEIGHT)
+    });
+  } catch {}
 }
 
 function applyDeviceEmulation(contents) {
@@ -59,9 +97,10 @@ function clearDeviceEmulation(contents) {
 }
 
 async function setMobile(enabled) {
-  const contents = embeddedBrowserContents();
-  if (!contents) throw new Error("Hãy mở một profile trước khi bật giả lập mobile.");
+  const target = embeddedBrowserTarget();
+  if (!target) throw new Error("Hãy mở một profile trước khi bật giả lập mobile.");
 
+  const { win, view, contents } = target;
   const next = Boolean(enabled);
   if (next) {
     if (!originalUserAgentByContentsId.has(contents.id)) {
@@ -70,12 +109,14 @@ async function setMobile(enabled) {
     contents.setUserAgent(MOBILE_USER_AGENT);
     applyDeviceEmulation(contents);
     enabledContentsIds.add(contents.id);
+    applyMobileBounds(win, view);
   } else {
     clearDeviceEmulation(contents);
     const original = originalUserAgentByContentsId.get(contents.id);
     if (original) contents.setUserAgent(original);
     originalUserAgentByContentsId.delete(contents.id);
     enabledContentsIds.delete(contents.id);
+    restoreDesktopBounds(win, view);
   }
 
   try {
@@ -149,6 +190,11 @@ function installToolbarButton(win) {
 
 app.on("browser-window-created", (_event, win) => {
   win.webContents.on("dom-ready", () => installToolbarButton(win));
+  win.on("resize", () => {
+    const target = embeddedBrowserTarget();
+    if (!target || target.win !== win || !isMobile(target.contents)) return;
+    applyMobileBounds(target.win, target.view);
+  });
 });
 
 app.on("web-contents-created", (_event, contents) => {
