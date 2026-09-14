@@ -1,0 +1,63 @@
+name: Desktop Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "desktop/package.json"
+      - ".github/workflows/desktop-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify desktop
+        run: npm run verify
+
+      - name: Build Windows installer
+        run: npm run dist
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PageBot-AI-Studio-Windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.yml
+            desktop/dist/*.blockmap
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          $tag = "desktop-v$version"
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists; installer build artifact is still available from this workflow run."
+            exit 0
+          }
+          $assets = Get-ChildItem -Path dist -File | Where-Object { $_.Extension -in '.exe', '.yml', '.blockmap' } | ForEach-Object { $_.FullName }
+          if (-not $assets) { throw 'No release assets were produced.' }
+          gh release create $tag $assets --target $env:GITHUB_SHA --title "PageBot AI Studio v$version" --notes "Windows installer for PageBot AI Studio v$version. Use the in-app Update button for later releases."
