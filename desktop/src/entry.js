@@ -67,12 +67,12 @@ if (nativeFetch) {
 // Keep the old Auto loop fully disarmed unless the user explicitly enables it.
 require("./legacy-auto-guard");
 
-// Heavy Sales/Follow-up AI code is loaded only when Auto Chat actually needs it.
+// Meta Muse sales/chat runtime is loaded only when AI Chat or Auto Chat needs it.
 let salesRuntimeLoading = null;
 ipcMain.handle("sales:ensure-runtime", async () => {
   if (!salesRuntimeLoading) {
     salesRuntimeLoading = Promise.resolve().then(() => {
-      require("./sales-followup-runtime");
+      require("./meta-sales-runtime");
       return true;
     }).catch((error) => {
       salesRuntimeLoading = null;
