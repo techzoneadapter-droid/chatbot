@@ -24,22 +24,25 @@ test('customer burst must settle before AI is allowed to answer', () => {
   assert.match(auto, /Khách vừa nhắn thêm/);
 });
 
-test('sales analyzer is available through preload and remains network-idle until invoked', () => {
+test('Meta sales analyzer is available through preload and remains network-idle until invoked', () => {
   const entry = read('src/entry.js');
   const preload = read('src/preload.js');
-  const runtime = read('src/sales-followup-runtime.js');
-  assert.match(entry, /require\("\.\/sales-followup-runtime"\)/);
+  const runtime = read('src/meta-sales-runtime.js');
+  assert.match(entry, /require\("\.\/meta-sales-runtime"\)/);
   assert.match(preload, /sales:analyze-followup/);
   assert.match(runtime, /ipcMain\.handle\("sales:analyze-followup"/);
+  assert.match(runtime, /muse-spark-1\.3/);
+  assert.match(runtime, /https:\/\/api\.meta\.ai\/v1\/chat\/completions/);
   assert.doesNotMatch(runtime, /^\s*fetch\(/m);
 });
 
-test('sales orchestrator supports reply wait follow-up handoff and close actions', () => {
-  const runtime = read('src/sales-followup-runtime.js');
+test('Meta sales orchestrator supports reply wait follow-up handoff and close actions', () => {
+  const runtime = read('src/meta-sales-runtime.js');
   assert.match(runtime, /reply\|wait\|follow_up\|handoff\|close/);
   assert.match(runtime, /confidence/);
-  assert.match(runtime, /Page đã hỏi\/đã trả lời và hiện đang chờ khách/);
-  assert.match(runtime, /KHÔNG nói 'đã lên đơn trên hệ thống'/);
+  assert.match(runtime, /nếu Page vừa hỏi khách/i);
+  assert.match(runtime, /không xin lại/i);
+  assert.match(runtime, /không lặp/i);
 });
 
 test('429 errors pause AI instead of retrying the same customer aggressively', () => {
