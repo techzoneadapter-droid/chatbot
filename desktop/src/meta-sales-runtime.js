@@ -1,0 +1,192 @@
+"use strict";
+
+const { app, ipcMain, safeStorage } = require("electron");
+const fs = require("node:fs");
+const path = require("node:path");
+const { normalizeSalesState } = require("./sales-followup-policy");
+
+const DEFAULT_META_MODEL = "muse-spark-1.3";
+
+function dataFile() {
+  return path.join(app.getPath("userData"), "pagebot-data.json");
+}
+
+function loadData() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(dataFile(), "utf8"));
+    return {
+      profiles: Array.isArray(parsed.profiles) ? parsed.profiles : [],
+      secrets: parsed.secrets && typeof parsed.secrets === "object" ? parsed.secrets : {}
+    };
+  } catch {
+    return { profiles: [], secrets: {} };
+  }
+}
+
+function decryptSecret(value) {
+  if (!value || !safeStorage.isEncryptionAvailable()) return "";
+  try {
+    return safeStorage.decryptString(Buffer.from(value, "base64"));
+  } catch {
+    return "";
+  }
+}
+
+function getProfile(profileId) {
+  return loadData().profiles.find((item) => item.id === profileId) || null;
+}
+
+function metaApiKey() {
+  const data = loadData();
+  return decryptSecret(data.secrets?.meta).trim();
+}
+
+function compactMessages(snapshot) {
+  const messages = Array.isArray(snapshot?.messages) ? snapshot.messages.slice(-30) : [];
+  if (messages.length) {
+    return messages
+      .map((item) => `${item.direction === "incoming" ? "Khách" : item.direction === "outgoing" ? "Page" : "Khác"}: ${String(item.text || "").trim()}`)
+      .filter((line) => !line.endsWith(": "))
+      .join("\n");
+  }
+  return Array.isArray(snapshot?.history)
+    ? snapshot.history.slice(-30).join("\n")
+    : String(snapshot?.latestText || "");
+}
+
+function parseJson(text) {
+  const raw = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("Meta AI không trả về quyết định hội thoại hợp lệ.");
+  return JSON.parse(raw.slice(start, end + 1));
+}
+
+function modelFor(profile) {
+  const selected = String(profile?.aiModel || "").trim();
+  return /^muse-/i.test(selected) ? selected : DEFAULT_META_MODEL;
+}
+
+function systemPrompt(profile) {
+  const knowledge = String(profile?.knowledge || "").slice(0, 16000);
+  const custom = String(profile?.systemPrompt || "").slice(0, 5000);
+
+  return [
+    "Bạn là bộ điều phối hội thoại bán hàng của Page Facebook, chạy bằng Meta Muse Spark.",
+    "Mục tiêu là quyết định đúng bước tiếp theo, không phải lúc nào cũng phải gửi tin.",
+    "Luôn đọc toàn bộ lịch sử gần nhất trước khi quyết định.",
+    "Không hỏi lại thông tin khách đã cung cấp. Không lặp lại cùng một ý hoặc cùng một câu mà Page vừa gửi.",
+    "Nếu khách gửi nhiều tin liên tiếp, coi đó là một cụm ý và chỉ trả lời một lần sau khi khách nói xong.",
+    "Mỗi câu trả lời phải hoàn chỉnh, tự nhiên, thường 1-3 câu; không bỏ dở câu giữa chừng.",
+    "Không bịa giá, sản phẩm, ưu đãi, bảo hành, tồn kho, chính sách hoặc dữ liệu mà Page chưa cung cấp.",
+    "Nếu Page vừa hỏi khách và khách chưa trả lời thì phải WAIT, tuyệt đối không tự nhắn tiếp.",
+    "Nếu khách yêu cầu người thật, bực tức rõ ràng, vấn đề nhạy cảm hoặc dữ liệu không đủ để trả lời an toàn thì HANDOFF.",
+    "Nếu khách đã từ chối, hết nhu cầu hoặc đơn đã xác nhận xong thì CLOSE.",
+    "Nếu khách đang chờ Page trả lời và đủ dữ liệu thì REPLY.",
+    "Follow-up hội thoại cũ phải ngắn, chỉ khi khách là người nhắn cuối và còn cơ hội bán hàng.",
+    "Khi mục tiêu là xin SĐT/Zalo hoặc chốt đơn, làm tự nhiên theo tiến trình hội thoại, không ép khách và không xin lại nếu đã có.",
+    custom ? `CHỈ DẪN RIÊNG CỦA PROFILE:\n${custom}` : "",
+    knowledge ? `DỮ LIỆU RIÊNG CỦA PAGE:\n${knowledge}` : "DỮ LIỆU RIÊNG CỦA PAGE: (chưa có)"
+  ].filter(Boolean).join("\n\n");
+}
+
+function userPrompt(snapshot, mode) {
+  const transcript = compactMessages(snapshot);
+  return `Chế độ: ${mode === "followup_old" ? "đánh giá follow-up hội thoại cũ" : "xử lý cụm tin mới"}
+Hội thoại: ${snapshot?.title || "Không rõ"}
+
+LỊCH SỬ GẦN NHẤT:
+${transcript}
+
+Hãy quyết định đúng MỘT hành động và trả về JSON duy nhất theo schema sau:
+{
+  "action":"reply|wait|follow_up|handoff|close",
+  "status":"new|consulting|need_phone|need_name|need_address|need_order_details|need_confirmation|contact_promised|order_confirmed|done",
+  "confidence":0.85,
+  "customerWaitingForUs":true,
+  "pageWaitingForCustomer":false,
+  "explicitHumanRequest":false,
+  "hasPhone":false,
+  "hasZalo":false,
+  "hasName":false,
+  "hasAddress":false,
+  "hasOrderIntent":true,
+  "hasOrderDetails":false,
+  "orderConfirmed":false,
+  "missingFields":["phone"],
+  "summary":"tóm tắt ngắn",
+  "nextAction":"bước tiếp theo",
+  "handoffReason":"",
+  "shouldFollowUp":true,
+  "reply":"nội dung duy nhất cần gửi cho khách, hoặc chuỗi rỗng nếu không nên gửi"
+}
+
+Quy tắc cuối:
+- Nếu tin cuối là của Page và khách chưa trả lời: action=wait, reply="".
+- Nếu action=reply/follow_up: reply phải là MỘT phản hồi hoàn chỉnh, không lặp tin Page gần nhất.
+- Nếu đã có SĐT/Zalo thì không xin lại.
+- Nếu đã biết diện tích/sản phẩm/nhu cầu thì không hỏi lại thông tin đó.
+- Chỉ confidence >= 0.72 khi thật sự đủ chắc chắn để app tự gửi.
+- Không thêm markdown, giải thích hay văn bản ngoài JSON.`;
+}
+
+async function callMeta(apiKey, model, system, user) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 24000);
+  try {
+    const response = await fetch("https://api.meta.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user }
+        ],
+        temperature: 0.1,
+        reasoning_effort: "low",
+        max_tokens: 1400,
+        response_format: { type: "json_object" }
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = payload?.error?.message || payload?.message || "request failed";
+      throw new Error(`Meta Model API HTTP ${response.status}: ${message}`);
+    }
+
+    const content = payload?.choices?.[0]?.message?.content;
+    const text = typeof content === "string"
+      ? content.trim()
+      : Array.isArray(content)
+        ? content.map((part) => part?.text || part?.content || "").join("").trim()
+        : "";
+    if (!text) throw new Error("Meta Model API không trả về nội dung.");
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+ipcMain.handle("sales:analyze-followup", async (_event, profileId, snapshot, mode = "new_message") => {
+  const profile = getProfile(profileId);
+  if (!profile) throw new Error("Profile không tồn tại.");
+
+  const apiKey = metaApiKey();
+  if (!apiKey) throw new Error("Chưa có Meta Model API key. Vào AI Cấu hình → chọn Meta Model API → lưu MODEL_API_KEY.");
+
+  const safeMode = mode === "followup_old" ? "followup_old" : "new_message";
+  const raw = await callMeta(
+    apiKey,
+    modelFor(profile),
+    systemPrompt(profile),
+    userPrompt(snapshot || {}, safeMode)
+  );
+
+  return normalizeSalesState(parseJson(raw));
+});
