@@ -63,7 +63,9 @@ contextBridge.exposeInMainWorld("pagebot", {
     reload: () => ipcRenderer.invoke("browser:reload"),
     home: () => ipcRenderer.invoke("browser:home"),
     navigate: (url) => ipcRenderer.invoke("browser:navigate", url),
-    state: () => ipcRenderer.invoke("browser:state")
+    state: () => ipcRenderer.invoke("browser:state"),
+    mobileState: () => ipcRenderer.invoke("browser:mobile-emulation:state"),
+    setMobile: (enabled) => ipcRenderer.invoke("browser:mobile-emulation:set", Boolean(enabled))
   },
   chat: {
     snapshot: readChatSnapshot,
