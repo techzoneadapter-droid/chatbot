@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { BrowserWindow, ipcMain } = require("electron");
 
 const MOBILE_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36";
 const originalUserAgentByContentsId = new Map();
@@ -28,8 +28,11 @@ function embeddedBrowserContents() {
 function isMobile(contents) {
   if (!contents || contents.isDestroyed()) return false;
   if (enabledContentsIds.has(contents.id)) return true;
-  try { return /Android|iPhone|Mobile/i.test(String(contents.getUserAgent() || "")); }
-  catch { return false; }
+  try {
+    return /Android|iPhone|Mobile/i.test(String(contents.getUserAgent() || ""));
+  } catch {
+    return false;
+  }
 }
 
 function applyDeviceEmulation(contents) {
@@ -55,53 +58,9 @@ function clearDeviceEmulation(contents) {
   } catch {}
 }
 
-function updateToolbarButton(win, enabled, available = true) {
-  if (!win || win.isDestroyed()) return;
-  const script = `(() => {
-    const button = document.getElementById('mobile-emulation');
-    if (!button) return false;
-    const enabled = ${enabled ? "true" : "false"};
-    button.dataset.active = enabled ? '1' : '0';
-    button.disabled = ${available ? "false" : "true"};
-    button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-    button.title = enabled ? 'Tắt giả lập mobile' : 'Bật giả lập mobile (Pixel 7)';
-    button.style.background = enabled ? '#e8f1ff' : '';
-    button.style.borderColor = enabled ? '#7da7e8' : '';
-    button.style.color = enabled ? '#155bb5' : '';
-    return true;
-  })()`;
-  win.webContents.executeJavaScript(script, true).catch(() => {});
-}
-
-function installToolbarButton(win) {
-  if (!win || win.isDestroyed()) return;
-  const script = `(() => {
-    if (document.getElementById('mobile-emulation')) return true;
-    const host = document.querySelector('.nav-buttons');
-    if (!host) return false;
-    const button = document.createElement('button');
-    button.id = 'mobile-emulation';
-    button.type = 'button';
-    button.textContent = '📱';
-    button.title = 'Bật giả lập mobile (Pixel 7)';
-    button.setAttribute('aria-label', 'Bật giả lập mobile');
-    button.setAttribute('aria-pressed', 'false');
-    button.addEventListener('click', () => {
-      const next = button.dataset.active === '1' ? '0' : '1';
-      location.href = 'pagebot-mobile://toggle?enabled=' + next;
-    });
-    host.appendChild(button);
-    return true;
-  })()`;
-  win.webContents.executeJavaScript(script, true).then(() => {
-    const contents = embeddedBrowserContents();
-    updateToolbarButton(win, isMobile(contents), Boolean(contents));
-  }).catch(() => {});
-}
-
 async function setMobile(enabled) {
   const contents = embeddedBrowserContents();
-  if (!contents) return { enabled: false, available: false };
+  if (!contents) throw new Error("Hãy mở một profile trước khi bật giả lập mobile.");
 
   const next = Boolean(enabled);
   if (next) {
@@ -119,38 +78,33 @@ async function setMobile(enabled) {
     enabledContentsIds.delete(contents.id);
   }
 
-  try { contents.reloadIgnoringCache(); } catch { try { contents.reload(); } catch {} }
-  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
-  updateToolbarButton(win, next, true);
-  return { enabled: next, available: true, device: next ? "Pixel 7 · Android 14" : "Desktop" };
+  try {
+    contents.reloadIgnoringCache();
+  } catch {
+    try { contents.reload(); } catch {}
+  }
+
+  return {
+    enabled: next,
+    available: true,
+    device: next ? "Pixel 7 · Android 14" : "Desktop"
+  };
 }
 
 ipcMain.handle("browser:mobile-emulation:state", () => {
   const contents = embeddedBrowserContents();
-  return { enabled: isMobile(contents), available: Boolean(contents) };
+  return {
+    enabled: isMobile(contents),
+    available: Boolean(contents),
+    device: isMobile(contents) ? "Pixel 7 · Android 14" : "Desktop"
+  };
 });
+
 ipcMain.handle("browser:mobile-emulation:set", (_event, enabled) => setMobile(enabled));
 
-app.on("browser-window-created", (_event, win) => {
-  win.webContents.on("dom-ready", () => installToolbarButton(win));
-  win.webContents.on("will-navigate", (event, url) => {
-    if (!String(url || "").startsWith("pagebot-mobile://toggle")) return;
-    event.preventDefault();
-    let enabled = false;
-    try { enabled = new URL(url).searchParams.get("enabled") === "1"; } catch {}
-    void setMobile(enabled);
-  });
-});
-
-app.on("web-contents-created", (_event, contents) => {
-  if (!contents || contents.getType() === "window") return;
-  const reset = () => {
-    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
-    updateToolbarButton(win, false, true);
-  };
-  contents.once("did-finish-load", reset);
-  contents.once("destroyed", () => {
-    originalUserAgentByContentsId.delete(contents.id);
-    enabledContentsIds.delete(contents.id);
-  });
+ipcMain.on("browser:mobile-emulation:reset", () => {
+  const contents = embeddedBrowserContents();
+  if (!contents) return;
+  enabledContentsIds.delete(contents.id);
+  originalUserAgentByContentsId.delete(contents.id);
 });
