@@ -2,6 +2,8 @@ const { app, ipcMain, safeStorage } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
+const DEFAULT_META_MODEL = "muse-spark-1.3";
+
 function dataFile() {
   return path.join(app.getPath("userData"), "pagebot-data.json");
 }
@@ -81,12 +83,22 @@ async function listMetaModels(key) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`Meta Model API HTTP ${response.status}: ${payload?.error?.message || payload?.message || "không tải được danh sách model"}`);
     const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
-    return rows.map((item) => typeof item === "string" ? item : item?.id || item?.name).map((value) => String(value || "").trim()).filter(Boolean);
+    return rows
+      .map((item) => typeof item === "string" ? item : item?.id || item?.name)
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
   }, 12000);
 }
 
-function recommendedModel(models) {
+function recommendedModel(models, provider) {
   if (!Array.isArray(models) || !models.length) return "";
+  if (provider === "meta") {
+    return models.find((name) => name === DEFAULT_META_MODEL)
+      || models.find((name) => /muse-spark-1\.3/i.test(name))
+      || models.find((name) => /muse-spark/i.test(name) && !/contributor/i.test(name))
+      || models.find((name) => /muse-spark/i.test(name))
+      || models[0];
+  }
   return models.find((name) => /flash/i.test(name) && !/(lite|preview|exp)/i.test(name))
     || models.find((name) => /flash/i.test(name))
     || models[0];
@@ -120,9 +132,11 @@ async function probeMeta(key, model) {
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       signal,
       body: JSON.stringify({
-        model,
+        model: model || DEFAULT_META_MODEL,
         messages: [{ role: "user", content: "Trả lời đúng một câu ngắn: Kết nối AI thành công." }],
-        temperature: 0.1
+        temperature: 0.1,
+        reasoning_effort: "low",
+        max_tokens: 120
       })
     });
     const payload = await response.json().catch(() => ({}));
@@ -130,7 +144,7 @@ async function probeMeta(key, model) {
     const content = payload?.choices?.[0]?.message?.content;
     const text = typeof content === "string" ? content.trim() : Array.isArray(content) ? content.map((part) => part?.text || "").join("").trim() : "";
     if (!text) throw new Error("Meta Model API không trả về nội dung.");
-    return { ok: true, provider: "meta", model, latencyMs: Date.now() - started, preview: text.slice(0, 180) };
+    return { ok: true, provider: "meta", model: model || DEFAULT_META_MODEL, latencyMs: Date.now() - started, preview: text.slice(0, 180) };
   }, 35000);
 }
 
@@ -140,12 +154,12 @@ function registerAiRuntimeIpc() {
     const key = apiKey(provider);
     if (!key) throw new Error(`${provider === "meta" ? "Meta Model API" : "Gemini"} chưa có API key.`);
     const models = provider === "meta" ? await listMetaModels(key) : await listGeminiModels(key);
-    return { provider, models, recommended: recommendedModel(models) };
+    return { provider, models, recommended: recommendedModel(models, provider) };
   });
 
   ipcMain.handle("ai:probe", async (_event, input = {}) => {
     const provider = input.provider === "meta" ? "meta" : "gemini";
-    const model = String(input.model || "").trim();
+    const model = String(input.model || (provider === "meta" ? DEFAULT_META_MODEL : "")).trim();
     if (!model) throw new Error("Hãy chọn Model trước khi kiểm tra AI.");
     const key = apiKey(provider);
     if (!key) throw new Error(`${provider === "meta" ? "Meta Model API" : "Gemini"} chưa có API key.`);
