@@ -6,6 +6,7 @@ const path = require("node:path");
 const { normalizeSalesState } = require("./sales-followup-policy");
 
 const DEFAULT_META_MODEL = "muse-spark-1.3";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
 function dataFile() {
   return path.join(app.getPath("userData"), "pagebot-data.json");
@@ -36,9 +37,19 @@ function getProfile(profileId) {
   return loadData().profiles.find((item) => item.id === profileId) || null;
 }
 
-function metaApiKey() {
+function providerFor(profile) {
+  return profile?.aiProvider === "meta" ? "meta" : "gemini";
+}
+
+function apiKeyFor(provider) {
   const data = loadData();
-  return decryptSecret(data.secrets?.meta).trim();
+  return decryptSecret(data.secrets?.[provider]).trim();
+}
+
+function modelFor(profile, provider) {
+  const selected = String(profile?.aiModel || "").trim();
+  if (selected) return selected;
+  return provider === "meta" ? DEFAULT_META_MODEL : DEFAULT_GEMINI_MODEL;
 }
 
 function compactMessages(snapshot) {
@@ -54,17 +65,12 @@ function compactMessages(snapshot) {
     : String(snapshot?.latestText || "");
 }
 
-function parseJson(text) {
+function parseJson(text, providerLabel) {
   const raw = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("Meta AI không trả về quyết định hội thoại hợp lệ.");
+  if (start < 0 || end <= start) throw new Error(`${providerLabel} không trả về quyết định hội thoại hợp lệ.`);
   return JSON.parse(raw.slice(start, end + 1));
-}
-
-function modelFor(profile) {
-  const selected = String(profile?.aiModel || "").trim();
-  return /^muse-/i.test(selected) ? selected : DEFAULT_META_MODEL;
 }
 
 function systemPrompt(profile) {
@@ -72,7 +78,7 @@ function systemPrompt(profile) {
   const custom = String(profile?.systemPrompt || "").slice(0, 5000);
 
   return [
-    "Bạn là bộ điều phối hội thoại bán hàng của Page Facebook, chạy bằng Meta Muse Spark.",
+    "Bạn là bộ điều phối hội thoại bán hàng của Page Facebook.",
     "Mục tiêu là quyết định đúng bước tiếp theo, không phải lúc nào cũng phải gửi tin.",
     "Luôn đọc toàn bộ lịch sử gần nhất trước khi quyết định.",
     "Không hỏi lại thông tin khách đã cung cấp. Không lặp lại cùng một ý hoặc cùng một câu mà Page vừa gửi.",
@@ -173,20 +179,63 @@ async function callMeta(apiKey, model, system, user) {
   }
 }
 
+async function callGemini(apiKey, model, system, user) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 24000);
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 1800,
+          responseMimeType: "application/json"
+        }
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = payload?.error?.message || "request failed";
+      throw new Error(`Gemini HTTP ${response.status}: ${message}`);
+    }
+
+    const text = payload?.candidates?.[0]?.content?.parts
+      ?.map((part) => part?.text || "")
+      .join("")
+      .trim();
+    if (!text) throw new Error("Gemini không trả về nội dung.");
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 ipcMain.handle("sales:analyze-followup", async (_event, profileId, snapshot, mode = "new_message") => {
   const profile = getProfile(profileId);
   if (!profile) throw new Error("Profile không tồn tại.");
 
-  const apiKey = metaApiKey();
-  if (!apiKey) throw new Error("Chưa có Meta Model API key. Vào AI Cấu hình → chọn Meta Model API → lưu MODEL_API_KEY.");
+  const provider = providerFor(profile);
+  const providerLabel = provider === "meta" ? "Meta Model API" : "Gemini";
+  const apiKey = apiKeyFor(provider);
+  if (!apiKey) {
+    throw new Error(`Chưa có ${providerLabel} key. Vào AI Cấu hình → chọn ${providerLabel} → lưu API key.`);
+  }
 
   const safeMode = mode === "followup_old" ? "followup_old" : "new_message";
-  const raw = await callMeta(
-    apiKey,
-    modelFor(profile),
-    systemPrompt(profile),
-    userPrompt(snapshot || {}, safeMode)
-  );
+  const system = systemPrompt(profile);
+  const user = userPrompt(snapshot || {}, safeMode);
+  const model = modelFor(profile, provider);
+  const raw = provider === "meta"
+    ? await callMeta(apiKey, model, system, user)
+    : await callGemini(apiKey, model, system, user);
 
-  return normalizeSalesState(parseJson(raw));
+  return normalizeSalesState(parseJson(raw, providerLabel));
 });
