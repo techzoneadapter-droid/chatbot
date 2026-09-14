@@ -1,8 +1,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 let liteSnapshotReadyPromise = null;
+let salesRuntimeReadyPromise = null;
 
 async function openProfile(profileId) {
+  await ipcRenderer.invoke("profile:prepare-performance", profileId);
   await ipcRenderer.invoke("profile:prepare-network", profileId);
   return ipcRenderer.invoke("profile:open", profileId);
 }
@@ -15,6 +17,16 @@ async function ensureLiteSnapshotReader() {
     });
   }
   return liteSnapshotReadyPromise;
+}
+
+async function ensureSalesRuntime() {
+  if (!salesRuntimeReadyPromise) {
+    salesRuntimeReadyPromise = ipcRenderer.invoke("sales:ensure-runtime").catch((error) => {
+      salesRuntimeReadyPromise = null;
+      throw error;
+    });
+  }
+  return salesRuntimeReadyPromise;
 }
 
 async function readChatSnapshot() {
@@ -30,6 +42,11 @@ async function listConversations() {
 async function openConversation(locator) {
   await ensureLiteSnapshotReader();
   return ipcRenderer.invoke("chat:open-conversation", locator);
+}
+
+async function analyzeFollowup(profileId, snapshot, mode) {
+  await ensureSalesRuntime();
+  return ipcRenderer.invoke("sales:analyze-followup", profileId, snapshot, mode);
 }
 
 contextBridge.exposeInMainWorld("pagebot", {
@@ -55,7 +72,7 @@ contextBridge.exposeInMainWorld("pagebot", {
     send: (text) => ipcRenderer.invoke("chat:send", text)
   },
   sales: {
-    analyzeFollowup: (profileId, snapshot, mode) => ipcRenderer.invoke("sales:analyze-followup", profileId, snapshot, mode)
+    analyzeFollowup
   },
   ai: {
     suggest: () => ipcRenderer.invoke("ai:suggest"),
@@ -86,6 +103,12 @@ contextBridge.exposeInMainWorld("pagebot", {
     status: () => ipcRenderer.invoke("secrets:status"),
     set: (provider, apiKey) => ipcRenderer.invoke("secrets:set", provider, apiKey),
     clear: (provider) => ipcRenderer.invoke("secrets:clear", provider)
+  },
+  updates: {
+    status: () => ipcRenderer.invoke("updates:status"),
+    check: () => ipcRenderer.invoke("updates:check"),
+    download: () => ipcRenderer.invoke("updates:download"),
+    install: () => ipcRenderer.invoke("updates:install")
   },
   onEvent: (callback) => {
     const handler = (_event, payload) => callback(payload);
