@@ -4,11 +4,13 @@
     init = async function pageBotLazyInit() {
       bindStaticEvents();
       window.pagebot.onEvent(handleMainEvent);
-      await Promise.all([loadProfiles(), loadSecretStatus()]);
+      // Startup only reads the lightweight profile list. AI secure-storage status,
+      // browser sessions, proxy, chat readers and Auto runtimes are all deferred.
+      await loadProfiles();
       renderProfiles();
       renderAiPanel();
       if (typeof log === "function") {
-        log("PageBot sẵn sàng. Không profile, proxy, AI hay Auto Chat nào tự chạy khi mở app.", "success");
+        log("PageBot sẵn sàng. Không profile, proxy, AI, updater hay Auto Chat nào chạy nền khi mở app.", "success");
       }
     };
   }
