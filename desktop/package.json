@@ -1,6 +1,6 @@
 {
   "name": "pagebot-desktop",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "description": "Multi-profile Facebook browser with local AI chat assistant",
   "main": "src/app-entry.js",
   "author": "techzoneadapter-droid",

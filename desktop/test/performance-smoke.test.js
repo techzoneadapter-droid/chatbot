@@ -30,3 +30,17 @@ test("Electron entry retries transient Gemini and Meta API failures", () => {
   assert.match(source, /generativelanguage\.googleapis\.com/);
   assert.match(source, /api\.meta\.ai/);
 });
+
+test("slow Facebook loads are never force-reloaded by the performance guard", () => {
+  const source = fs.readFileSync(path.join(root, "src", "profile-performance.js"), "utf8");
+  assert.match(source, /setFrameRate\?\.\(30\)/);
+  assert.equal(source.includes("reloadIgnoringCache"), false);
+  assert.equal(source.includes("contents.reload("), false);
+});
+
+test("profile open stops blocking the shell after a short UI timeout", () => {
+  const source = fs.readFileSync(path.join(root, "src", "preload.js"), "utf8");
+  assert.match(source, /PROFILE_OPEN_UI_TIMEOUT_MS = 1200/);
+  assert.match(source, /Promise\.race\(\[opening, quickFallback\]\)/);
+  assert.match(source, /profiles:list/);
+});

@@ -2,11 +2,36 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 let liteSnapshotReadyPromise = null;
 let salesRuntimeReadyPromise = null;
+const PROFILE_OPEN_UI_TIMEOUT_MS = 1200;
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function openProfile(profileId) {
   await ipcRenderer.invoke("profile:prepare-performance", profileId);
   await ipcRenderer.invoke("profile:prepare-network", profileId);
-  return ipcRenderer.invoke("profile:open", profileId);
+
+  // profile:open creates the WebContentsView synchronously, but its IPC promise
+  // used to stay pending until Facebook finished loadURL(). On a slower PC or
+  // network this kept the whole shell behind the busy overlay for tens of
+  // seconds. Give the real open a short fast-path; after that return the known
+  // profile metadata so the UI is interactive while Chromium keeps loading.
+  const opening = ipcRenderer.invoke("profile:open", profileId);
+  const quickFallback = (async () => {
+    await wait(PROFILE_OPEN_UI_TIMEOUT_MS);
+    const profiles = await ipcRenderer.invoke("profiles:list");
+    return Array.isArray(profiles) ? profiles.find((profile) => profile?.id === profileId) || null : null;
+  })();
+
+  const result = await Promise.race([opening, quickFallback]);
+  if (result) {
+    // If the lightweight fallback won, make sure a later navigation failure is
+    // observed instead of becoming an unhandled promise rejection.
+    opening.catch((error) => console.error("Profile navigation failed", error));
+    return result;
+  }
+  return opening;
 }
 
 async function ensureLiteSnapshotReader() {
